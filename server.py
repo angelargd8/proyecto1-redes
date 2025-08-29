@@ -1,0 +1,1 @@
+# Servidor: es la herramienta que ejecuta las acciones. Puede ejecutarse de forma local o remoto. 
