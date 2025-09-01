@@ -7,14 +7,13 @@ from client import *
 from typing import Dict, Optional
 import time
 
-#load env variabless
+#load env variables
 load_dotenv()
 
 
 class SessionState:
-    def __init__(self, model: str, system_prop: Optional[str] = None):
+    def __init__(self, model: str): 
         self.model = model
-        self.system_prop= system_prop
         self.prev_id: Optional[str] = None
         self.created_at = time.time()
         self.turns = 0
@@ -27,10 +26,9 @@ class ChatService:
         self.llm = OpeniaGPT4ominiClient(model = default_model)
 
     #ciclo de vida de las sessions
-    def start_session(self, session_id: str, *, model: Optional[str] = None, system_prompt: Optional[str] = None):
-        if session_id in self.sessions:
-            return
-        self.sessions[session_id] = SessionState(model or self.llm.model, system_prompt)
+    def start_session(self, session_id: str, *, model: Optional[str] = None):
+        if session_id not in self.sessions:
+            self.sessions[session_id] = SessionState(model or self.llm.model)
 
     def reset_session(self, session_id):
         s = self._require(session_id)
@@ -41,4 +39,23 @@ class ChatService:
         if session_id in self.sessions:
             del self.sessions[session_id]
             
+
+    #interaction
+    def ask(self, session_id: str, user_msg: str, max_output_tokens: int = 100) -> str:
+        s = self._require(session_id)
+        if s.prev_id is None:
+            text, rid = self.llm.first_turn(user_msg=user_msg, max_output_tokens=max_output_tokens)
+        else:
+            text, rid = self.llm.next_turn(prev_response_id=s.prev_id, user_msg=user_msg, max_output_tokens=max_output_tokens)
+        s.prev_id = rid
+        s.turns += 1
+        return text
+    
+    #utils
+    def _require(self, session_id: str) -> SessionState:
+        if session_id not in self.sessions:
+            # si no existe, se crea con defaultss
+            self.start_session(session_id)
+        return self.sessions[session_id]
+    
         
