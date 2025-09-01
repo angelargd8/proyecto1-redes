@@ -20,7 +20,7 @@ source .venv/bin/activate
 instalar depedencias:
 
 ```
-pip install anthropic dotenv openai
+pip install anthropic dotenv openai mpc
 ```
 
 # References: 
