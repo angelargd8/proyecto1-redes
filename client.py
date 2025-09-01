@@ -33,8 +33,3 @@ class OpeniaGPT4ominiClient:
     
 
 
-chatgpt4mini = OpeniaGPT4ominiClient()
-print("====== ChatGPT 4o mini =============")
-question = input("Pregunta lo que quieras: ")
-response = chatgpt4mini.send_message(question )
-print(response)
