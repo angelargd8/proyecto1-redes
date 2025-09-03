@@ -1,1 +1,0 @@
-hola MCP desde claude
