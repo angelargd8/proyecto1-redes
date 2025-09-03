@@ -7,8 +7,9 @@ from client import *
 from typing import Dict, Optional
 import time
 from log import JsonlLogger
+from mcpClient import commit_readme_in_existing_repo
 
-#load env variables
+#load env variablesss
 load_dotenv()
 
 
@@ -18,7 +19,7 @@ class SessionState:
         self.prev_id: Optional[str] = None
         self.created_at = time.time()
         self.turns = 0
-
+        
 
 class ChatService:
     def __init__(self, default_model: str = "gpt-4o-mini", logger: JsonlLogger | None = None):
@@ -26,6 +27,16 @@ class ChatService:
         self.logger = logger or JsonlLogger()
         #el unico cliente del llm para todo el servicio
         self.llm = OpeniaGPT4ominiClient(model = default_model)
+        #s
+
+    #crear repo
+    def create_repo_with_readme(self, repo_path, text, msg):
+        self.fs.create_directory(repo_path)
+        self.fs.write_file(f"{repo_path}/README2.md", text)
+        self.git.set_workdir(repo_path)
+        self.git.init()
+        self.git.add(["README2.md"])
+        self.git.commit(msg)
 
     #ciclo de vida de las sessions
     def start_session(self, session_id: str, *, model: Optional[str] = None):
@@ -67,3 +78,4 @@ class ChatService:
         return self.sessions[session_id]
     
     
+#s

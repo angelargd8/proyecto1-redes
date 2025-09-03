@@ -20,8 +20,10 @@ source .venv/bin/activate
 instalar depedencias:
 
 ```
-pip install anthropic dotenv openai mpc
+pip install anthropic dotenv openai mpc "mcp[cli]"
 ```
+
+/readme C:/Users/angel/OneDrive/Documentos/.universidad/.2025/s2/redes/proyecto1-redes/mcp-demo | Hola, este es el README actualizado desde MCP. | docs: update README
 
 # References: 
 - https://modelcontextprotocol.io/quickstart/server
