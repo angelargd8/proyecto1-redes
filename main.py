@@ -1,11 +1,11 @@
-#sssssa
+#ssss
 from client import *
 from server import *
-from mcpClient import commit_readme_in_existing_repo, create_repo_with_readme_and_commit
+from mcpClient import commit_readme_in_existing_repo, create_repo_with_readme_and_commit, create_or_push
 import traceback
 
 def main():
-    #s
+
     session_id = "cli-1"
     svc = ChatService()
     svc.start_session(session_id)
@@ -14,7 +14,9 @@ def main():
     print("= para salir escribe SALIR o QUIT =")
     print("Comandos:")
     print("  /repo <ruta> | <texto readme> | <mensaje commit>      # crea repo nuevo + README + commit")
-    print("  /readme <ruta_repo> | <texto readme> | <mensaje>      # SOLO actualiza/crea README y commit en repo EXISTENTE\n")
+    print("  /readme <ruta_repo> | <texto readme> | <mensaje>      # solo actualiza/crea README y commit en repo existente")
+    print("  /publish <ruta_repo> | <usuario/repositorio> | <branch>  # crea remote si falta y hace push")
+
 
     print("="*196)
 
@@ -40,6 +42,7 @@ def main():
                         allowed_dirs=[r"C:/Users/angel/Projects",
                                     r"C:/Users/angel/Desktop",
                                     r"C:/Users/angel/OneDrive/Documentos/.universidad/.2025/s2/redes/proyecto1-redes",
+                                    r"C:/Users/angel/OneDrive/Documentos/.universidad/.2025/s2/redes/",
                                     r"C:/Users/angel/OneDrive/Documentos/.universidad/.2025/s2/redes/proyecto1-redes/mcp-demo",
 
         
@@ -77,6 +80,22 @@ def main():
                 except Exception as e:
                     print(f"Error en /repo: {e}")
                 continue
+                
+            elif question.startswith("/publish "):
+                try:
+                    _, rest = question.split("/publish ", 1)
+                    parts = [p.strip() for p in rest.split("|")]
+                    repo_path = parts[0]
+                    remote_slug = parts[1]
+                    branch = parts[2] if len(parts) > 2 else "main"
+
+                    create_or_push(repo_path, remote_slug, branch=branch, prefer_ssh=False)
+                    print(f"Subido a https://github.com/{remote_slug} en '{branch}'")
+                except Exception as e:
+                    print("Error en publish:", e)
+                continue
+
+                
 
             else:
                 response = svc.ask(session_id, question, max_output_tokens=100)

@@ -4,11 +4,12 @@ from typing import Any, Dict, List, Optional
 import anyio
 from mcp.client.stdio import stdio_client, StdioServerParameters
 from mcp import ClientSession
-
+import subprocess
+#sss
 #comandos
 NPX = os.environ.get("NPX_CMD") or shutil.which("npx") or r"C:\Program Files\nodejs\npx.cmd"
-FS_BIN = shutil.which("server-filesystem")   # binario global (npm -g) — NO lo usamos; preferimos npx
-GIT_BIN = shutil.which("git-mcp-server")     # binario global (npm -g)
+FS_BIN = shutil.which("server-filesystem")   
+GIT_BIN = shutil.which("git-mcp-server")  
 
 def _render_content(res) -> List[Dict[str, Any]]:
     out = []
@@ -30,6 +31,123 @@ def _first_json(res) -> Optional[Dict[str, Any]]:
 
 def _norm_win(p: str) -> str:
     return os.path.normpath(p)
+
+#para validar si es un repo git
+
+def run_git(repo_path: str, *args: str) -> str:
+    proc = subprocess.run(["git", "-C", repo_path, *args],
+                          capture_output=True, text=True)
+    if proc.returncode != 0:
+        raise RuntimeError(proc.stderr.strip() or "git failed")
+    return proc.stdout.strip()
+
+def is_git_repo(repo_path: str) -> bool:
+    try:
+        run_git(repo_path, "rev-parse", "--git-dir")
+        return True
+    except Exception:
+        return False
+   
+def ensure_repo(repo_path: str):
+    os.makedirs(repo_path, exist_ok=True)
+    if not is_git_repo(repo_path):
+        run_git(repo_path, "init")
+
+def current_branch(repo_path: str) -> str:
+    try:
+        return run_git(repo_path, "rev-parse", "--abbrev-ref", "HEAD")
+    except Exception:
+        return ""
+    
+def ensure_branch(repo_path: str, branch: str = "main"):
+    # Si no hay commit inicial crea el branch directamente
+    try:
+        run_git(repo_path, "checkout", "-B", branch)
+    except Exception:
+        # Crea el head apuntando a branch
+        run_git(repo_path, "symbolic-ref", "HEAD", f"refs/heads/{branch}")
+
+def add_or_update_remote(repo_path: str, name: str, url: str):
+    try:
+        curr = run_git(repo_path, "remote", "get-url", name)
+        if curr != url:
+            run_git(repo_path, "remote", "set-url", name, url)
+    except Exception:
+        run_git(repo_path, "remote", "add", name, url)
+
+
+# def push_to_github(repo_path: str, remote_url: str, branch: str = "main"):
+#     ensure_repo(repo_path)
+#     ensure_branch(repo_path, branch)
+#     ensure_initial_commit(repo_path)
+#     add_or_update_remote(repo_path, "origin", remote_url)
+#     print(run_git(repo_path, "push", "-u", "origin", f"HEAD:{branch}"))
+#s
+
+def create_remote_if_missing(repo_path: str, remote_slug: str, branch: str = "main", visibility: str = "private"):
+    """
+    remote_slug: "usuario/nombre-repo" (sin .git)
+    Requiere GitHub CLI autenticado: gh auth login
+    """
+    
+    try:
+        run_git(repo_path, "ls-remote", "--exit-code", f"https://github.com/{remote_slug}.git")
+        return  # ya existe
+    except Exception:
+        pass
+
+    # crearlo y primer push 
+    cmd = [
+        "gh", "repo", "create", remote_slug,
+        f"--{visibility}",
+        "--source", repo_path,
+        "--remote", "origin",
+        "--push",
+        # "--confirm",
+    ]
+    proc = subprocess.run(cmd, capture_output=True, text=True)
+    if proc.returncode != 0:
+        raise RuntimeError(f"gh repo create falló:\n{proc.stderr.strip()}")
+    print(proc.stdout.strip())
+
+
+def create_or_push(repo_path: str, remote_slug: str, branch: str = "main", prefer_ssh: bool = False):
+    """
+    remote_slug: "usuario/nombre-repo"
+    Si el repo remoto no existe, lo crea con gh. Luego hace push HEAD:branch.
+    """
+    ensure_repo(repo_path)
+    ensure_branch(repo_path, branch)
+    ensure_initial_commit(repo_path)
+
+    # URL remota 
+    remote_url = (
+        f"git@github.com:{remote_slug}.git" if prefer_ssh
+        else f"https://github.com/{remote_slug}.git"
+    )
+    add_or_update_remote(repo_path, "origin", remote_url)
+
+    # Crea remoto si no existe 
+    try:
+        run_git(repo_path, "ls-remote", "--exit-code", "origin")
+    except Exception:
+        create_remote_if_missing(repo_path, remote_slug, branch=branch, visibility="private")
+
+    # push final
+    print(run_git(repo_path, "push", "-u", "origin", f"HEAD:{branch}"))
+
+def has_commits(repo_path: str) -> bool:
+    try:
+        out = run_git(repo_path, "rev-list", "--count", "HEAD")
+        return out.strip() != "0"
+    except Exception:
+        return False
+
+def ensure_initial_commit(repo_path: str):
+    if not has_commits(repo_path):
+        # commit vacío si no hay nada que agregar
+        run_git(repo_path, "commit", "--allow-empty", "-m", "chore: initial commit")
+
 
 class AsyncMCPClient:
     def __init__(
@@ -259,17 +377,40 @@ def create_repo_with_readme_and_commit(repo_path: str, readme_text: str, commit_
             r"C:/Users/angel/Projects",
             r"C:/Users/angel/Desktop",
             r"C:/Users/angel/OneDrive/Documentos/.universidad/.2025/s2/redes/proyecto1-redes",
+            r"C:/Users/angel/OneDrive/Documentos/.universidad/.2025/s2/redes",
         ]
     async def _run():
-        async with AsyncMCPClient(allowed_dirs=allowed_dirs, cwd=os.getcwd()) as mcp:
-            await mcp.fs_create_directory(repo_path)
-            await mcp.fs_write_file(f"{repo_path}/README.md", readme_text)
-            await mcp.git_set_workdir(repo_path)
-            await mcp.git_init()
-            await mcp.git_add(["README.md"])
-            await mcp.git_commit(commit_msg)
-            print(await mcp.git_status()); print(await mcp.git_log(limit=3))
+        async with AsyncMCPClient(allowed_dirs=allowed_dirs) as mcp:
+            # crea carpeta y README por  MCP con fallback
+            try:
+                await mcp.fs_create_directory(repo_path)
+                await mcp.fs_write_file(f"{repo_path}/README.md", readme_text)
+            except Exception:
+                os.makedirs(repo_path, exist_ok=True)
+                with open(os.path.join(repo_path, "README.md"), "w", encoding="utf-8") as f:
+                    f.write(readme_text)
+
+            # init repo y rama
+            ensure_repo(repo_path)
+            ensure_branch(repo_path, "main")
+
+            # commit del README MCP con fallback
+            try:
+                await mcp.git_set_workdir(repo_path)
+                await mcp.git_add(["README.md"])
+                await mcp.git_commit(commit_msg)
+            except Exception:
+                run_git(repo_path, "add", "README.md")
+                run_git(repo_path, "commit", "-m", commit_msg)
+
+            try:
+                print(run_git(repo_path, "status", "--short"))
+                print(run_git(repo_path, "log", "-1", "--oneline"))
+            except Exception:
+                pass
+
     anyio.run(_run)
+
 
 def commit_readme_in_existing_repo(
     repo_path: str,
@@ -279,7 +420,7 @@ def commit_readme_in_existing_repo(
     allowed_dirs: Optional[List[str]] = None,
 ) -> None:
     """
-    Actualiza/crea README.md y hace git add+commit en un repo YA inicializado.
+    Actualiza/crea README.md y hace git add+commit en un repo ya inicializado.
     - Sin 'git status' temprano (evita warning de working dir)
     - Rutas absolutas para git_add
     - Reintento único de git_set_workdir
@@ -291,6 +432,8 @@ def commit_readme_in_existing_repo(
             r"C:/Users/angel/Projects",
             r"C:/Users/angel/Desktop",
             r"C:/Users/angel/OneDrive/Documentos/.universidad/.2025/s2/redes/proyecto1-redes",
+            r"C:/Users/angel/OneDrive/Documentos/.universidad/.2025/s2/redes/",
+
         ]
 
     readme_abs = os.path.normpath(os.path.join(repo_path, "README.md"))

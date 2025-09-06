@@ -1,4 +1,4 @@
-# s
+# logs que se encuentran en la carpeta logs como app.jsonl
 import os, json, uuid, datetime as dt
 from typing import Any, Dict, Optional
 

@@ -5,7 +5,7 @@ from dotenv import load_dotenv
 import os, time
 from log import JsonlLogger
 
-#load env variablessss
+#load env variables
 load_dotenv()
 
 class OpeniaGPT4ominiClient:
