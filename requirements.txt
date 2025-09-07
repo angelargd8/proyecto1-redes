@@ -1,0 +1,6 @@
+anthropic 
+dotenv 
+openai 
+mpc 
+"mcp[cli]" 
+google-api-python-client

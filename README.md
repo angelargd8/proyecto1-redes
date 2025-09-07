@@ -1,45 +1,78 @@
 # Projet 1 : Use of existing protocol
 
 # Description:
+This project implements a CLI chatbot that acts as an MCP host and connects to multiple MCP servers (tools) to perform real actions: create and manage local Git repositories, read/write the filesystem, and explore YouTube trends. The chatbot uses an LLM to understand natural-language prompts and trigger tool calls automatically.
 
-# Features: 
+## Features
+- **LLM connection** (OpenAI Responses API) with tool-calling.
+- **Session context**: preserves conversation state across turns.
+- **Structured logging**: JSONL logs of prompts, tool calls, outputs, and model responses.
+- **Git & Filesystem tools** (MCP):
+  - Create a repository in an allowed directory.
+  - Write/update `README.md`.
+  - Commit changes and push to a remote (HTTPS/SSH).
+- **YouTube Trends (local MCP server)**:
+  - Initialize YouTube client (API key).
+  - List regions/categories.
+  - Fetch “Most Popular” by region.
+  - Register keywords and search recent videos by keyword(s).
+  - Compute a simple trend score and get per-keyword “deep dives”.
+  - Export results (CSV/JSON).
 
 
-crear el entorno:
+
+### Create the environment:
 
 ```
 python3 -m venv .venv
 ```
 
-activarlo:
+## activate it:
 
 ```
 source .venv/bin/activate
 ```
 
-instalar depedencias:
+## download dependencies:
 
 ```
-pip install anthropic dotenv openai mpc "mcp[cli]"
+pip install -r requirements.txt
 ```
-s
-/readme C:/Users/angel/OneDrive/Documentos/.universidad/.2025/s2/redes/proyecto1-redes/mcp-demo | Hola, este es el README actualizado desde MCP. | docs: update README
+
+If you want to install it one by one:
+```
+pip install anthropic dotenv openai mpc "mcp[cli]" google-api-python-client
+```
+
+<!-- /readme C:/Users/angel/OneDrive/Documentos/.universidad/.2025/s2/redes/proyecto1-redes/mcp-demo | Hola, este es el README actualizado desde MCP. | docs: update README
 
 /repo C:/Users/angel/OneDrive/Documentos/.universidad/.2025/s2/redes/prueba | README desde MCP | feat: init
 
-/publish C:/Users/angel/OneDrive/Documentos/.universidad/.2025/s2/redes/prueba | angelargd8/prueba | main
+/publish C:/Users/angel/OneDrive/Documentos/.universidad/.2025/s2/redes/prueba | angelargd8/prueba | main -->
 
+## Example prompts: 
 
-puedes crear un repositorio que se llame pruebaMCP  en C:/Users/angel/OneDrive/Documentos/.universidad/.2025/s2/redes/ con un readme que diga: esto es un readme y hacerle un commit que diga: chore init
+- puedes crear un repositorio que se llame pruebaMCP  en C:/Users/angel/OneDrive/Documentos/.universidad/.2025/s2/redes/ con un readme que diga: esto es un readme y hacerle un commit que diga: chore init
 
+- Escribe en el README del repo C:/Users/angel/OneDrive/Documentos/.universidad/.2025/s2/redes/pruebaMCP el texto: Notas de uso y haz commit que diga docs: notes
 
-Escribe en el README del repo C:/Users/angel/OneDrive/Documentos/.universidad/.2025/s2/redes/pruebaMCP el texto: Notas de uso y haz commit que diga docs: notes
+- Haz push del repo C:/Users/angel/OneDrive/Documentos/.universidad/.2025/s2/redes/pruebaMCP al remoto https://github.com/angelargd8/pruebaMCP.git  en la branch main
 
-Haz push del repo C:/Users/angel/OneDrive/Documentos/.universidad/.2025/s2/redes/pruebaMCP al remoto https://github.com/angelargd8/pruebaMCP.git  en la branch main
+## Explample prompts for youtube api:
+- lista códigos de region de youtube 
+- dame el top de tendencias en youtube guatemala limite 15
+- registra keywords: minecraft, marvel
+- busca 10 videos por keyword de los ultimos 7 días en GT
+- calcula tendencias top 5
+- profundiza en marvel top 5
+- calcula tendencias top 3
+- exporta reporte csv
+- dime el top de tendencias en youtube SV
+
 
 # References: 
 - https://modelcontextprotocol.io/quickstart/server
 
-the next reference I know that is about claude. First I tried, but when I saw that I had to pay, preffer openia. So I just adapted the code from anthropic to openia, is not a big difference as you can see
+Note: The next reference I know that is about claude. First I tried, but when I saw that I had to pay, preffer OpenIA. So I just adapted the code from anthropic to OpenIA, is not a big difference as you can see
 - https://markaicode.com/claude-sonnet-4-python-api-integration/
 
