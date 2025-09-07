@@ -1,109 +1,27 @@
-#ssss
-from client import *
-from server import *
-from mcpClient import commit_readme_in_existing_repo, create_repo_with_readme_and_commit, create_or_push
-import traceback
-
-FEATURE_COMMANDS = False  # cambiar a True para habilitar comandos /repo, /readme, /publish
+from ChatTool import ToolCallingChatService
 
 def main():
-
     session_id = "cli-1"
-    svc = ChatService()
-    svc.start_session(session_id)
+    svc = ToolCallingChatService(model="gpt-4o-mini")
 
     print("\n\n====== ChatGPT 4o mini =============" + "=" *160)
     print("= para salir escribe SALIR o QUIT =")
-    # print("Comandos:")
-    # print("  /repo <ruta> | <texto readme> | <mensaje commit>      # crea repo nuevo + README + commit")
-    # print("  /readme <ruta_repo> | <texto readme> | <mensaje>      # solo actualiza/crea README y commit en repo existente")
-    # print("  /publish <ruta_repo> | <usuario/repositorio> | <branch>  # crea remote si falta y hace push")
 
-
-    print("="*196)
 
     try:
         while True:
-            question = input("Pregunta lo que quieras: ").strip()
-            if question.upper() == "SALIR" or question == "QUIT":
-                svc.end_session(session_id)
-                break;
-            
-            elif FEATURE_COMMANDS and question.startswith("/readme "):
-                try:
-                    _, rest = question.split("/readme ", 1)
-                    parts = [p.strip() for p in rest.split("|")]
-                    repo_path  = parts[0]
-                    readme_txt = parts[1] if len(parts) > 1 else "# README\n"
-                    commit_msg = parts[2] if len(parts) > 2 else "docs: update README"
-
-                    commit_readme_in_existing_repo(
-                        repo_path=repo_path,
-                        readme_text=readme_txt,
-                        commit_msg=commit_msg,
-                        allowed_dirs=[r"C:/Users/angel/Projects",
-                                    r"C:/Users/angel/Desktop",
-                                    r"C:/Users/angel/OneDrive/Documentos/.universidad/.2025/s2/redes/proyecto1-redes",
-                                    r"C:/Users/angel/OneDrive/Documentos/.universidad/.2025/s2/redes/",
-                                    r"C:/Users/angel/OneDrive/Documentos/.universidad/.2025/s2/redes/proyecto1-redes/mcp-demo",
-
-        
-                                ],
-                    )
-
-                    print(f"README actualizado y commit hecho en {repo_path}")
-                    
-                except Exception as e:
-                    print(f"Error al crear el repositorio: {e}")
-                    print("error en el /readme", traceback.format_exc()) #
-                continue
-
-            elif FEATURE_COMMANDS and question.startswith("/repo "):
-                try:
-                    _, rest = question.split("/repo ", 1)
-                    parts = [p.strip() for p in rest.split("|")]
-                    repo_path  = parts[0]
-                    readme_txt = parts[1] if len(parts) > 1 else "# README\n"
-                    commit_msg = parts[2] if len(parts) > 2 else "chore: init"
-
-                    create_repo_with_readme_and_commit(
-                        repo_path=repo_path,
-                        readme_text=readme_txt,
-                        commit_msg=commit_msg,
-                        allowed_dirs=[
-                            r"C:/Users/angel/Projects",
-                            r"C:/Users/angel/Desktop",
-                            r"C:/Users/angel/OneDrive/Documentos/.universidad/.2025/s2/redes/proyecto1-redes",
-                            r"C:/Users/angel/OneDrive/Documentos/.universidad/.2025/s2/redes",
-
-                        ],
-                    )
-                    print(f"Repositorio creado en {repo_path} con README y commit.")
-                except Exception as e:
-                    print(f"Error en /repo: {e}")
-                continue
-                
-            elif FEATURE_COMMANDS and question.startswith("/publish "):
-                try:
-                    _, rest = question.split("/publish ", 1)
-                    parts = [p.strip() for p in rest.split("|")]
-                    repo_path = parts[0]
-                    remote_slug = parts[1]
-                    branch = parts[2] if len(parts) > 2 else "main"
-
-                    create_or_push(repo_path, remote_slug, branch=branch, prefer_ssh=False)
-                    print(f"Subido a https://github.com/{remote_slug} en '{branch}'")
-                except Exception as e:
-                    print("Error en publish:", e)
-                continue
-
-                
-
-            else:
-                response = svc.ask(session_id, question, max_output_tokens=500)
-                print(response)
+            q = input("Pregunta lo que quieras: ").strip()
+            print("="*80)
+            if q.upper() in ("SALIR", "QUIT", "EXIT"):
+                break
+            try:
+                ans = svc.ask(session_id, q, max_output_tokens=900)
+                print(ans)
+            except Exception as e:
+                print("Error:", e)
 
     except KeyboardInterrupt:
         svc.end_session(session_id)
         print("Interrumpido" )
+
 main()
