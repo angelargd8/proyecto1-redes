@@ -26,11 +26,11 @@ class SetWorkingDirIntent:
 
 Intent = Union[CreateRepoIntent, UpdateReadmeIntent, PushIntent, SetWorkingDirIntent]
 
-# helpers
+# helpersss
 # Conectores de slot (ruta, texto, commit)
 _TERMINATORS = (
-    r'(?=\s+(?:y|e|con|hacer(?:le)?|haga|haz|hazle|commit|al\s+remoto|link|url|enlace|en\s+la\s+branch|branch|que|'
-    r'el\s+texto|texto|diga|text|says|tell|el\s+contenido|contenido)\b|$)'
+    r'(?=\s+(?:y|e|con|hacer(?:le)?|haga|haz|commit|al\s+remoto|remoto\s+es|url\s+remoto|remote\s+url|'
+    r'en\s+la\s+branch|la\s+rama|rama|branch|que|el\s+texto|texto|el\s+contenido|contenido)\b|$)'
 )
 
 def _unquote(s: str) -> str:
@@ -43,6 +43,10 @@ def _clean_path(p: str) -> str:
     p = _unquote(p)
     p = p.strip().rstrip(" .")
     return os.path.normpath(p)
+
+def _strip_urls(text: str) -> str:
+    return re.sub(r'https?://\S+|git@[^:\s]+:[^\s]+\b', ' ', text)
+
 
 def _extract_name(text: str) -> Optional[str]:
     m = re.search(r'\bque\s+se\s+llame\s+([A-Za-z0-9._\-]+)\b', text, re.IGNORECASE)
@@ -72,7 +76,8 @@ def _extract_path(text: str) -> Optional[str]:
             return _clean_path(m.group(1))
 
     # Fallback: ultima ruta absoluta
-    m_all = list(re.finditer(r'([A-Za-z]:[\\/][^:"<>|?\r\n]+)', text))  # nota: ':' EXCLUIDO
+    no_urls = _strip_urls(text)
+    m_all = list(re.finditer(r'([A-Za-z]:[\\/][^:"<>|?\r\n]+)', no_urls))  # nota: ':' EXCLUIDO
     if m_all:
         cand = m_all[-1].group(1)
         

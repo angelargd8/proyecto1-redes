@@ -154,3 +154,10 @@ Client does not support MCP Roots, using allowed directories set from server arg
   'C:\\Users\\angel\\OneDrive\\Documentos\\.universidad\\.2025\\s2\\redes\\proyecto1-redes',
   'C:\\Users\\angel\\OneDrive\\Documentos\\.universidad\\.2025\\s2\\redes'
 ]
+Secure MCP Filesystem Server running on stdio
+Client does not support MCP Roots, using allowed directories set from server args: [
+  'C:\\Users\\angel\\Projects',
+  'C:\\Users\\angel\\Desktop',
+  'C:\\Users\\angel\\OneDrive\\Documentos\\.universidad\\.2025\\s2\\redes\\proyecto1-redes',
+  'C:\\Users\\angel\\OneDrive\\Documentos\\.universidad\\.2025\\s2\\redes'
+]
