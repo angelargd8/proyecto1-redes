@@ -21,7 +21,7 @@ class OpeniaGPT4ominiClient:
         self.prev_id = None
         self.logger = logger or JsonlLogger()
 
-    def first_turn(self, session_id: str, user_msg: str, max_output_tokens: int = 100 ) ->str:
+    def first_turn(self, session_id: str, user_msg: str, max_output_tokens: int = 500 ) ->str:
         t0 = time.perf_counter()
         self.logger.event("llm","request", session_id=session_id, turn=1,
                           request={"model": self.model, "op": "first_turn", "max_tokens": max_output_tokens,

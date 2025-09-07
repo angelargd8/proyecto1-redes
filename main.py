@@ -4,6 +4,8 @@ from server import *
 from mcpClient import commit_readme_in_existing_repo, create_repo_with_readme_and_commit, create_or_push
 import traceback
 
+FEATURE_COMMANDS = False  # cambiar a True para habilitar comandos /repo, /readme, /publish
+
 def main():
 
     session_id = "cli-1"
@@ -12,10 +14,10 @@ def main():
 
     print("\n\n====== ChatGPT 4o mini =============" + "=" *160)
     print("= para salir escribe SALIR o QUIT =")
-    print("Comandos:")
-    print("  /repo <ruta> | <texto readme> | <mensaje commit>      # crea repo nuevo + README + commit")
-    print("  /readme <ruta_repo> | <texto readme> | <mensaje>      # solo actualiza/crea README y commit en repo existente")
-    print("  /publish <ruta_repo> | <usuario/repositorio> | <branch>  # crea remote si falta y hace push")
+    # print("Comandos:")
+    # print("  /repo <ruta> | <texto readme> | <mensaje commit>      # crea repo nuevo + README + commit")
+    # print("  /readme <ruta_repo> | <texto readme> | <mensaje>      # solo actualiza/crea README y commit en repo existente")
+    # print("  /publish <ruta_repo> | <usuario/repositorio> | <branch>  # crea remote si falta y hace push")
 
 
     print("="*196)
@@ -27,7 +29,7 @@ def main():
                 svc.end_session(session_id)
                 break;
             
-            elif question.startswith("/readme "):
+            elif FEATURE_COMMANDS and question.startswith("/readme "):
                 try:
                     _, rest = question.split("/readme ", 1)
                     parts = [p.strip() for p in rest.split("|")]
@@ -56,7 +58,7 @@ def main():
                     print("error en el /readme", traceback.format_exc()) #
                 continue
 
-            elif question.startswith("/repo "):
+            elif FEATURE_COMMANDS and question.startswith("/repo "):
                 try:
                     _, rest = question.split("/repo ", 1)
                     parts = [p.strip() for p in rest.split("|")]
@@ -81,7 +83,7 @@ def main():
                     print(f"Error en /repo: {e}")
                 continue
                 
-            elif question.startswith("/publish "):
+            elif FEATURE_COMMANDS and question.startswith("/publish "):
                 try:
                     _, rest = question.split("/publish ", 1)
                     parts = [p.strip() for p in rest.split("|")]
@@ -98,7 +100,7 @@ def main():
                 
 
             else:
-                response = svc.ask(session_id, question, max_output_tokens=100)
+                response = svc.ask(session_id, question, max_output_tokens=500)
                 print(response)
 
     except KeyboardInterrupt:

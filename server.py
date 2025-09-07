@@ -8,8 +8,10 @@ from typing import Dict, Optional
 import time
 from log import JsonlLogger
 from mcpClient import commit_readme_in_existing_repo
+from intents import  parse_intent
+from actions import execute_intent
 
-#load env variablesss
+#load env variables
 load_dotenv()
 
 
@@ -58,10 +60,24 @@ class ChatService:
             
 
     #interaction
-    def ask(self, session_id: str, user_msg: str, max_output_tokens: int = 100) -> str:
+    def ask(self, session_id: str, user_msg: str, max_output_tokens: int = 200) -> str:
         s = self._require(session_id)
         turn = s.turns + 1
 
+        #intento de ejecutar accion MCP por lenguaje natural
+        intent = parse_intent(user_msg)
+        if intent: 
+            try:
+                result = execute_intent(intent)
+                self.logger.event("action","executed", session_id=session_id, turn=turn,
+                                  info={"intent": intent.__class__.__name__, "result": result})
+                return result
+            except Exception as e:
+                self.logger.event("action","error", session_id=session_id, turn=turn,
+                                  info={"intent": intent.__class__.__name__, "error": str(e)})
+                return f"Error al ejecutar la acción: {str(e)}"
+            
+        # si no hay intencion, se hace una consulta normal al LLM
         if s.prev_id is None:
             text, rid = self.llm.first_turn(session_id = session_id, user_msg=user_msg, max_output_tokens=max_output_tokens)
         else:

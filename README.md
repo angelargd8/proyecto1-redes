@@ -30,6 +30,12 @@ s
 /publish C:/Users/angel/OneDrive/Documentos/.universidad/.2025/s2/redes/prueba | angelargd8/prueba | main
 
 
+puedes crear un repositorio que se llame pruebaMCP  en C:/Users/angel/OneDrive/Documentos/.universidad/.2025/s2/redes/ con un readme que diga: esto es un readme y hacerle un commit que diga: chore init
+
+
+Escribe en el README del repo C:/Users/angel/OneDrive/Documentos/.universidad/.2025/s2/redes/pruebaMCP el texto: Notas de uso y haz commit que diga docs: notes
+
+Haz push del repo C:/Users/angel/OneDrive/Documentos/.universidad/.2025/s2/redes/pruebaMCP al remoto https://github.com/angelargd8/pruebaMCP.git  en la branch main
 
 # References: 
 - https://modelcontextprotocol.io/quickstart/server
