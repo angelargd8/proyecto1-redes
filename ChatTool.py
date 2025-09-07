@@ -5,6 +5,7 @@ from typing import Optional, List, Dict, Any
 from client import OpeniaGPT4ominiClient 
 from toolsYoutube import YOUTUBE_TOOLS
 from YTtool import execute_tool_sync as yt_execute_tool
+from log import JsonlLogger
 
 # helpers Git por si el modelo llama tools
 from mcpClient import (
@@ -602,11 +603,12 @@ def _try_git_fallback(user_msg: str) -> Optional[str]:
 
 # Servicio de chat con tool-callin
 class ToolCallingChatService:
-    def __init__(self, model: str = "gpt-4o-mini", allowed_dirs: Optional[List[str]] = None, client: OpeniaGPT4ominiClient | None = None):
+    def __init__(self, model: str = "gpt-4o-mini", allowed_dirs: Optional[List[str]] = None, client: OpeniaGPT4ominiClient | None = None, logger: JsonlLogger | None = None):
         self.llm = client or OpeniaGPT4ominiClient(model=model)
         self.model = self.llm.model
         self.allowed_dirs = allowed_dirs or ALLOWED_DIRS_DEFAULT
-        self.sessions: Dict[str, str] = {}  # session_id -> prev_response_id
+        self.sessions: Dict[str, str] = {}  # session_id -> prev_response_ids
+        self.logger = logger or JsonlLogger()
 
     def _wait_until_ready(self, resp, *, poll_interval=0.25, timeout=60.0):
         rid = resp.id
@@ -641,6 +643,12 @@ class ToolCallingChatService:
                 except Exception:
                     args = {}
 
+                self.logger.event("tool", "call",
+                    session_id=None,
+                    turn=None,
+                    tool={"name": name, "args": args, "id": tc_id}
+                )
+
                 _dbg("-> exec tool:", name, "id:", tc_id, "args:", args)
 
                 if name and name.startswith("git_"):
@@ -654,9 +662,16 @@ class ToolCallingChatService:
                         _dbg("YouTube no inicializado -> yt_init + retry", name)
                         _ = yt_execute_tool("yt_init", {})
                         result = yt_execute_tool(name, args)
-
+                
                 else:
                     result = {"error": f"Tool desconocida: {name}"}
+
+                self.logger.event("tool", "result",
+                    session_id=None,
+                    turn=None,
+                    tool={"name": name, "id": tc_id},
+                    result_preview=str(result)[:800]
+                )
 
                 outputs.append({
                     "tool_call_id": tc_id,
@@ -689,6 +704,14 @@ class ToolCallingChatService:
     def ask(self, session_id: str, user_msg: str, max_output_tokens: int = 700) -> str:
         prev_id_clean = self._drain_or_drop(self.sessions.get(session_id))
 
+        self.logger.event(
+            "chat", "request",
+            session_id=session_id,
+            turn=None,
+            request={"text": user_msg, "model": self.model}
+        )
+
+
         # Enviar el input como content parts
         user_input_parts = [
             {
@@ -714,19 +737,42 @@ class ToolCallingChatService:
         yt_int = parse_yt_intent(_norm_text(user_msg))
         if yt_int:
             text = run_yt_intent(yt_int)
+            self.logger.event("yt", "intent",
+                session_id=session_id,
+                turn=None,
+                intent=yt_int,
+                result_preview=text[:400]
+            )
             self.sessions[session_id] = None
             return text
 
 
         git_intent_text = _try_git_fallback(user_msg) #
         if git_intent_text:
+            self.logger.event("git", "fallback_intent",
+                session_id=session_id,
+                turn=None,
+                request={"text": user_msg},
+                result_preview=git_intent_text[:400]
+            )
             self.sessions[session_id] = None
             return git_intent_text
 
         resp = self.llm.client.responses.create(**create_kwargs)
+        self.logger.event("llm", "responses.create",
+            session_id=session_id,
+            request={"input": user_input_parts, "tools_count": len(ALL_TOOLS)}
+        )
+
+
         _dbg("create status:", getattr(resp, "status", None))
 
         resp = self._wait_until_ready(resp)
+        self.logger.event("llm", "poll",
+            session_id=session_id,
+            response={"id": resp.id, "status": getattr(resp, "status", None)}
+        )
+
         resp = self._handle_required_action(resp)
 
         text = _collect_text(resp)
@@ -744,5 +790,18 @@ class ToolCallingChatService:
                 if yt_alt:
                     text = yt_alt
 
+        # log
+        self.logger.event(
+            "chat", "response",
+            session_id=session_id,
+            turn=None,
+            response={
+                "id": resp.id,
+                "status": getattr(resp, "status", None),
+                "text": text,
+                "model": self.model,
+            },
+            request={"text": user_msg},
+        )
         self.sessions[session_id] = resp.id
         return text

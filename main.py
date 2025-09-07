@@ -21,7 +21,6 @@ def main():
                 print("Error:", e)
 
     except KeyboardInterrupt:
-        svc.end_session(session_id)
         print("Interrumpido" )
 
 main()
