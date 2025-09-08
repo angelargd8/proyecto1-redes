@@ -53,7 +53,7 @@ pip install anthropic dotenv openai mpc "mcp[cli]" google-api-python-client
 
 - Haz push del repo C:/Users/angel/OneDrive/Documentos/.universidad/.2025/s2/redes/pruebaMCP al remoto https://github.com/angelargd8/pruebaMCP.git  en la branch main
 
-## Explample prompts for youtube api:
+## Example prompts for youtube api:
 - lista códigos de region de youtube 
 - dame el top de tendencias en youtube guatemala limite 15
 - registra keywords: minecraft, marvel
