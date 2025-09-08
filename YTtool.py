@@ -1,5 +1,5 @@
 from __future__ import annotations
-import os, json, math, csv
+import os, json, math, csv, sys
 from typing import Dict, Any, List, Optional
 from datetime import datetime, timedelta, timezone
 
@@ -55,23 +55,31 @@ def _chunked(seq: List[str], n: int) -> List[List[str]]:
 
 # Implementaciones de tools
 def yt_init(args: Dict[str, Any]) -> Dict[str, Any]:
-    """ Inicializa el cliente de YouTube """
     global _YT
     if build is None:
-        return _err("Falta dependencia: instala google-api-python-client (pip install google-api-python-client).")
+        return _err("Falta dependencia: instala google-api-python-client")
     api_key = (args or {}).get("api_key") or os.getenv("YOUTUBE_API_KEY", "")
     if not api_key:
-        return _err("API key vacía. Pasa api_key o define YOUTUBE_API_KEY en el entorno.")
-    _YT = build("youtube", "v3", developerKey=api_key)
+        return _err("YouTube no está inicializado: falta YOUTUBE_API_KEY en .env ")
+    try:
+        _YT = build("youtube", "v3", developerKey=api_key)
+    except Exception as ex:
+        return _err(f"Fallo creando cliente de YouTube: {ex}")
     return _ok("YouTube client listo.")
 
+
 def yt_list_regions(args: Dict[str, Any]) -> Dict[str, Any]:
-    """ Lista códigos de región """
     e = _ensure_init()
     if e: return e
     try:
         resp = _YT.i18nRegions().list(part="snippet").execute()
         items = resp.get("items", [])
+        if not items:
+            return _err(
+                "yt_list_regions devolvió 0 items. Revisa que tu API key esté correcta, "
+                "que 'YouTube Data API v3' esté habilitada en tu proyecto, y que la key no tenga "
+                "restricciones incompatibles (para scripts/servidor NO uses 'HTTP referrers')."
+            )
         regions = [{"code": it.get("id"), "name": it.get("snippet", {}).get("name")} for it in items]
         return _ok("regions", regions=regions, count=len(regions))
     except Exception as ex:
@@ -93,7 +101,6 @@ def yt_list_categories(args: Dict[str, Any]) -> Dict[str, Any]:
         return _err(f"yt_list_categories falló: {ex}")
 
 def yt_fetch_most_popular(args: Dict[str, Any]) -> Dict[str, Any]:
-    """ Trending del país (mostPopular) """
     e = _ensure_init()
     if e: return e
     region = (args or {}).get("region") or "GT"
@@ -115,7 +122,9 @@ def yt_fetch_most_popular(args: Dict[str, Any]) -> Dict[str, Any]:
     try:
         while page < max_pages:
             resp = _YT.videos().list(**req).execute()
-            for it in resp.get("items", []):
+            print(f"[yt_fetch_most_popular] API resp keys: {list(resp.keys())}", file=sys.stderr)
+            items = resp.get("items", [])
+            for it in items:
                 out.append({
                     "videoId": it.get("id"),
                     "title": it.get("snippet", {}).get("title"),
@@ -132,9 +141,13 @@ def yt_fetch_most_popular(args: Dict[str, Any]) -> Dict[str, Any]:
     except Exception as ex:
         return _err(f"yt_fetch_most_popular falló: {ex}")
 
+    if not out:
+        return _err(f"No se recibieron videos en 'mostPopular' para region={region}")
+
     out = out[:max(1, limit)]
     _STATE["last_fetch_popular"] = out
     return _ok("most_popular", region=region, count=len(out), items=out)
+
 
 def yt_register_keywords(args: Dict[str, Any]) -> Dict[str, Any]:
     """ Registra keywords (lista o string 'k1, k2') """
@@ -277,7 +290,7 @@ def yt_calc_trends(args: Dict[str, Any]) -> Dict[str, Any]:
     _STATE["last_calc"] = {"keywords": kw_rank, "videos": videos_scored}
     return _ok("calc_trends", keywords=kw_rank[:limit], top_videos=videos_scored[:limit])
 
-#s
+
 def yt_trend_details(args: Dict[str, Any]) -> Dict[str, Any]:
     """ Devuelve detalle de una keyword (top N videos por score) """
     if not _STATE["last_calc"].get("videos"):

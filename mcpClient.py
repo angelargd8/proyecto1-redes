@@ -12,26 +12,6 @@ NPX = os.environ.get("NPX_CMD") or shutil.which("npx") or r"C:\Program Files\nod
 FS_BIN = shutil.which("server-filesystem")
 GIT_BIN = shutil.which("git-mcp-server")
 
-def _render_content(res) -> List[Dict[str, Any]]:
-    out = []
-    for item in getattr(res, "content", []):
-        if hasattr(item, "text"):  out.append({"type": "text", "text": item.text})
-        elif hasattr(item, "value"): out.append({"type": "json", "value": item.value})
-        else: out.append({"type": "repr", "value": repr(item)})
-    return out
-
-def _first_text(res) -> Optional[str]:
-    for item in getattr(res, "content", []):
-        if hasattr(item, "text"):
-            return item.text
-    return None
-
-def _first_json(res) -> Optional[Dict[str, Any]]:
-    for item in getattr(res, "content", []):
-        if hasattr(item, "value"):
-            return item.value
-    return None
-
 def _norm_win(p: str) -> str:
     return os.path.normpath(p)
 

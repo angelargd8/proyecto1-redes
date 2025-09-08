@@ -44,11 +44,6 @@ If you want to install it one by one:
 pip install anthropic dotenv openai mpc "mcp[cli]" google-api-python-client
 ```
 
-<!-- /readme C:/Users/angel/OneDrive/Documentos/.universidad/.2025/s2/redes/proyecto1-redes/mcp-demo | Hola, este es el README actualizado desde MCP. | docs: update README
-
-/repo C:/Users/angel/OneDrive/Documentos/.universidad/.2025/s2/redes/prueba | README desde MCP | feat: init
-
-/publish C:/Users/angel/OneDrive/Documentos/.universidad/.2025/s2/redes/prueba | angelargd8/prueba | main -->
 
 ## Example prompts: 
 

@@ -3,3 +3,9 @@
 /__pycache__
 /__pycache__
 /__pycache__
+*.log
+/.yt_state
+*.log
+filesystem.mcp.log
+/__pycache__
+__pycache__/mcpClient.cpython-312.pyc

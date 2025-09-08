@@ -4,3 +4,5 @@ openai
 mpc 
 "mcp[cli]" 
 google-api-python-client
+modelcontextprotocol
+anyio

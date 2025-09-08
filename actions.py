@@ -1,6 +1,6 @@
 from typing import Optional, List
 from intents import Intent, CreateRepoIntent, UpdateReadmeIntent, PushIntent, SetWorkingDirIntent
-from mcpClient import create_repo_with_readme_and_commit, commit_readme_in_existing_repo, create_or_push, create_remote_and_push
+from mcpClient import create_repo_with_readme_and_commit, commit_readme_in_existing_repo,  create_remote_and_push
 
 
 ALLOWED_DIRS_DEFAULT = [
