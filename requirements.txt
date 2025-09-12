@@ -6,3 +6,4 @@ mpc
 google-api-python-client
 modelcontextprotocol
 anyio
+citeproc-py-styles

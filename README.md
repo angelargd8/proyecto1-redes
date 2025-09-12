@@ -64,6 +64,12 @@ pip install anthropic dotenv openai mpc "mcp[cli]" google-api-python-client
 - exporta reporte csv
 - dime el top de tendencias en youtube SV
 
+## Example promps for zotero:
+- Citame en APA esta URL: https://academia-lab.com/enciclopedia/modelo-basado-en-agentes/
+
+- crea la referencia https://es.wikipedia.org/wiki/GNU/Linux
+
+- haz la bibliografia de https://normas-apa.org/introduccion/que-son-las-normas-apa/
 
 # References: 
 - https://modelcontextprotocol.io/quickstart/server

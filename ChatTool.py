@@ -11,6 +11,11 @@ from mcp import ClientSession
 
 from intents import parse_intent
 from actions import execute_intent
+from ZTRClient import ztr_execute_tool_http
+from citeproc import CitationStylesStyle, CitationStylesBibliography, formatter, CitationItem  
+from citeproc.source.json import CiteProcJSON
+from citeproc import Citation, CitationItem  
+
 
 #para debbugear 
 DEBUG = False # ahorita esta en false, porque siento que se ve feo en el CLI
@@ -24,7 +29,12 @@ def _norm_text(s: str) -> str:
     s = re.sub(r"\s+", " ", s)
     return s
 
-# trigger general de tema YouTube
+#trigger de zotero sssssssssss
+_APA_TRIGGER = re.compile(r"\b(cita|c[ií]tame|referencia|bibliograf[ií]a|formatea|apa)\b", re.I)
+
+ZTR_MCP_HTTP = "https://ztrmcp-990598886898.us-central1.run.app/mcp/sse?version=1.0"
+
+# trigger general de tema YouTubesss
 _YT_TOPIC = re.compile(
     r"(youtube|yt|tenden|trending|keywords?|palabras\s+clave|categor[ií]as|regiones?|regi[oó]n|exporta|profundiza|detalle|detalles|videos?)",
     re.I,
@@ -56,6 +66,46 @@ ALLOWED_DIRS_DEFAULT = [
     r"C:/Users/angel/OneDrive/Documentos/.universidad/.2025/s2/redes/proyecto1-redes",
     r"C:/Users/angel/OneDrive/Documentos/.universidad/.2025/s2/redes",
 ]
+
+
+#mcp zotero
+def parse_cite_intent(text: str) -> dict | None:
+    t = (text or "").strip()
+    if not _APA_TRIGGER.search(t):
+        return None
+    # intenta extraer la URL
+    m = re.search(r'https?://\S+', t)
+    url = m.group(0) if m else None
+    if not url:
+        m2 = re.search(r'url\s*:\s*"(.*?)"', t, re.I)
+        url = m2.group(1) if m2 else None
+    return {"action": "apa_from_url", "url": url}
+
+
+def run_cite_intent(intent: dict) -> str:
+    url = (intent.get("url") or "").strip()
+    if not url:
+        return "¿Qué URL quieres citar en APA? Ejemplo: 'Cítame en APA: https://ejemplo.com/articulo'"
+
+    args = {"url": url, "style": "apa", "locale": "es-ES"}
+    
+    if ZTR_MCP_HTTP:
+        r = ztr_execute_tool_http("apa_from_url", args, ZTR_MCP_HTTP)
+    else:
+        print("No hay URL de Zotero MCP configurada.")
+
+    if not isinstance(r, dict):
+        return "No entendí la respuesta del servidor de referencias"
+    if r.get("error"):
+        return f"Error al generar APA: {r['error']}"
+
+    refs = r.get("references") or r.get("apa") or []
+    if isinstance(refs, str):
+        return refs
+    if isinstance(refs, list) and refs:
+        return "\n".join(refs)
+    return "No se pudo generar una referencia APA (respuesta vacía)"
+
 
 # MCP YouTube cliente
 async def _yt_call_mcp(tool: str, args: dict) -> dict:
@@ -503,7 +553,21 @@ class ToolCallingChatService:
             self.sessions[session_id] = None
             return text
         
-        # 3) LLM normal en el caso que no tenga nada que ver con Git o YouTube
+
+        # Detecta intención de crear referencia apa
+        cite_int = parse_cite_intent(_norm_text(user_msg))
+        if cite_int:
+            text = run_cite_intent(cite_int)
+            self.logger.event("ztr", "intent",
+                session_id=session_id,
+                turn=None,
+                intent=cite_int,
+                result_preview=str(text)[:400]
+            )
+            self.sessions[session_id] = None
+            return text
+        
+        # LLM normal en el caso que no tenga nada que ver con Git o YouTube
         user_input_parts = [
             {
                 "role": "user",
