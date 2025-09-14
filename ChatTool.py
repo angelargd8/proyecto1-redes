@@ -12,10 +12,6 @@ from mcp import ClientSession
 from intents import parse_intent
 from actions import execute_intent
 from ZTRClient import ztr_execute_tool_http
-from citeproc import CitationStylesStyle, CitationStylesBibliography, formatter, CitationItem  
-from citeproc.source.json import CiteProcJSON
-from citeproc import Citation, CitationItem  
-
 
 #para debbugear 
 DEBUG = False # ahorita esta en false, porque siento que se ve feo en el CLI
@@ -29,7 +25,7 @@ def _norm_text(s: str) -> str:
     s = re.sub(r"\s+", " ", s)
     return s
 
-#trigger de zotero sssssssssss
+#trigger de zotero
 _APA_TRIGGER = re.compile(r"\b(cita|c[ií]tame|referencia|bibliograf[ií]a|formatea|apa)\b", re.I)
 
 ZTR_MCP_HTTP = "https://ztrmcp-990598886898.us-central1.run.app/mcp/sse?version=1.0"
@@ -40,7 +36,7 @@ _YT_TOPIC = re.compile(
     re.I,
 )
 
-# esto es para el fallback de regiones, porque al parecer hay unas que la api no las toma porque estan en miniscula
+# esto es para el fallback de regiones, porque al parecer hay unas que la api no las toma porque tienen tilde
 COUNTRY_ALIASES = {
     "gt": "GT", "sv": "SV", "mx": "MX", "us": "US", "ar": "AR", "co": "CO", "pe": "PE",
     "cl": "CL", "es": "ES", "br": "BR", "uy": "UY", "py": "PY", "bo": "BO",
@@ -478,7 +474,7 @@ def _collect_text(resp) -> str:
     return f"(sin contenido; status={st})"
 
 
-# Servicio de chat con tool-callin
+# Servicio de chat con tool-calling
 class ToolCallingChatService:
     def __init__(self, model: str = "gpt-4o-mini", allowed_dirs: Optional[List[str]] = None, client: OpeniaGPT4ominiClient | None = None, logger: JsonlLogger | None = None):
         self.llm = client or OpeniaGPT4ominiClient(model=model)

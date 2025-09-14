@@ -1,5 +1,4 @@
 # Cliente: es el componente que mantiene la conexión con el servidor, y obtiene la información sobre como utilizarlo. 
-import asyncio
 from openai import OpenAI
 from dotenv import load_dotenv
 import os, time
@@ -40,7 +39,6 @@ class OpeniaGPT4ominiClient:
                           response={"id": response.id, "duration_ms": dt_ms,
                                     "text": response.output_text, "usage": usage})
 
-        # self.prev_id = response.id
         return response.output_text, response.id
 
     def next_turn(self, session_id: str, prev_response_id: str, user_msg: str, max_output_tokens : int = 100, turn: int = 2) ->str:
@@ -63,7 +61,7 @@ class OpeniaGPT4ominiClient:
         self.logger.event("llm","response", session_id=session_id, turn=turn,
                           response={"id": response.id, "duration_ms": dt_ms,
                                     "text": response.output_text, "usage": usage})
-        # self.prev_id = response.id
+
         return response.output_text, response.id
     
 
