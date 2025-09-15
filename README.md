@@ -47,6 +47,8 @@ pip install anthropic dotenv openai mpc "mcp[cli]" google-api-python-client
 
 ## Example prompts: 
 
+- crea una carpteta en C:/Users/angel/OneDrive/Documentos/.universidad/.2025/s2/redes/ que se llame CARPETA
+
 - puedes crear un repositorio que se llame pruebaMCP  en C:/Users/angel/OneDrive/Documentos/.universidad/.2025/s2/redes/ con un readme que diga: esto es un readme y hacerle un commit que diga: chore init
 
 - Escribe en el README del repo C:/Users/angel/OneDrive/Documentos/.universidad/.2025/s2/redes/pruebaMCP el texto: Notas de uso y haz commit que diga docs: notes
