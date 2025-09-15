@@ -1,5 +1,9 @@
 # Projet 1 : Use of existing protocol
 
+# Remote server!: 
+https://github.com/angelargd8/RemoteServerMCP 
+
+
 # Description:
 This project implements a CLI chatbot that acts as an MCP host and connects to multiple MCP servers (tools) to perform real actions: create and manage local Git repositories, read/write the filesystem, and explore YouTube trends. The chatbot uses an LLM to understand natural-language prompts and trigger tool calls automatically.
 
@@ -74,14 +78,10 @@ pip install anthropic dotenv openai mpc "mcp[cli]" google-api-python-client
 - haz la bibliografia de https://normas-apa.org/introduccion/que-son-las-normas-apa/
 
 
-# Remote server: 
-https://github.com/angelargd8/RemoteServerMCP 
-
-
 
 # References: 
 - https://modelcontextprotocol.io/quickstart/server
 
-Note: The next reference I know that is about claude. First I tried, but when I saw that I had to pay, preffer OpenIA. So I just adapted the code from anthropic to OpenIA, is not a big difference as you can see
+Note: The next reference I  I am aware of is about anthropic. First I tried, but when I saw that I had to pay, I preferred OpenIA. So I just adapted the code from anthropic to OpenIA, it's not a big difference as you can see
 - https://markaicode.com/claude-sonnet-4-python-api-integration/
 
