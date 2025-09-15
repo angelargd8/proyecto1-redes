@@ -71,6 +71,12 @@ pip install anthropic dotenv openai mpc "mcp[cli]" google-api-python-client
 
 - haz la bibliografia de https://normas-apa.org/introduccion/que-son-las-normas-apa/
 
+
+# Remote server: 
+https://github.com/angelargd8/RemoteServerMCP 
+
+
+
 # References: 
 - https://modelcontextprotocol.io/quickstart/server
 

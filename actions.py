@@ -53,7 +53,7 @@ def execute_intent(intent: Intent, *, allowed_dirs: Optional[List[str]] = None) 
         try:
             create_remote_and_push(
                 repo_path=intent.repo_path,
-                remote_url= intent.remote_url,   # URL completa https o ssh
+                remote_url= intent.remote_url,
                 branch= intent.branch,
             )
             

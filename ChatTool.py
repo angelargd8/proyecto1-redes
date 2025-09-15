@@ -12,6 +12,7 @@ from mcp import ClientSession
 from intents import parse_intent
 from actions import execute_intent
 from ZTRClient import ztr_execute_tool_http
+import re, traceback, anyio
 
 #para debbugear 
 DEBUG = False # ahorita esta en false, porque siento que se ve feo en el CLI
@@ -25,12 +26,15 @@ def _norm_text(s: str) -> str:
     s = re.sub(r"\s+", " ", s)
     return s
 
+#---------------------------------------------------------------------------
 #trigger de zotero
 _APA_TRIGGER = re.compile(r"\b(cita|c[ií]tame|referencia|bibliograf[ií]a|formatea|apa)\b", re.I)
 
 ZTR_MCP_HTTP = "https://ztrmcp-990598886898.us-central1.run.app/mcp/sse?version=1.0"
+#--------------------------------------------------------------------------
 
-# trigger general de tema YouTubesss
+#-------------------------------------------------------------------------
+# trigger general de tema YouTubes
 _YT_TOPIC = re.compile(
     r"(youtube|yt|tenden|trending|keywords?|palabras\s+clave|categor[ií]as|regiones?|regi[oó]n|exporta|profundiza|detalle|detalles|videos?)",
     re.I,
@@ -56,6 +60,7 @@ COUNTRY_ALIASES = {
     "bolivia": "BO",
 }
 
+#-----------------------------------------------------------
 ALLOWED_DIRS_DEFAULT = [
     r"C:/Users/angel/Projects",
     r"C:/Users/angel/Desktop",
@@ -63,7 +68,7 @@ ALLOWED_DIRS_DEFAULT = [
     r"C:/Users/angel/OneDrive/Documentos/.universidad/.2025/s2/redes",
 ]
 
-
+#-----------------------------------------------------------
 #mcp zotero
 def parse_cite_intent(text: str) -> dict | None:
     t = (text or "").strip()
@@ -103,6 +108,7 @@ def run_cite_intent(intent: dict) -> str:
     return "No se pudo generar una referencia APA (respuesta vacía)"
 
 
+#-----------------------------------------------------------
 # MCP YouTube cliente
 async def _yt_call_mcp(tool: str, args: dict) -> dict:
     base_dir = os.path.dirname(os.path.abspath(__file__))
@@ -473,7 +479,7 @@ def _collect_text(resp) -> str:
     st = getattr(resp, "status", None)
     return f"(sin contenido; status={st})"
 
-
+#-----------------------------------------------------------
 # Servicio de chat con tool-calling
 class ToolCallingChatService:
     def __init__(self, model: str = "gpt-4o-mini", allowed_dirs: Optional[List[str]] = None, client: OpeniaGPT4ominiClient | None = None, logger: JsonlLogger | None = None):
@@ -520,6 +526,17 @@ class ToolCallingChatService:
             request={"text": user_msg, "model": self.model}
         )
 
+        # list tools
+        if re.search(r'\b(list|lista)\s+(tools|herramientas)\b', user_msg, re.I):
+            text = self.llm.list_mcp_tools_sync()
+            self.sessions[session_id] = None
+            self.logger.event("chat", "list_tools",
+                session_id=session_id,
+                turn=None,
+                response={"text": text}
+            )
+            return text
+        
         #  Git
         git_intent = parse_intent(user_msg)
         if git_intent:

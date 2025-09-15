@@ -2,8 +2,9 @@ from __future__ import annotations
 import json, os, sys
 from typing import Any, Dict
 from mcp.server.fastmcp import FastMCP
-try:
-    from dotenv import load_dotenv 
+from dotenv import load_dotenv 
+
+try:    
     load_dotenv()
     print(f"[YTServerMCP] .env cargado; YOUTUBE_API_KEY={'YES' if os.getenv('YOUTUBE_API_KEY') else 'NO'}", file=sys.stderr)
 except Exception as e:

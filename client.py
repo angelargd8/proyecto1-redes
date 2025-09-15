@@ -3,6 +3,9 @@ from openai import OpenAI
 from dotenv import load_dotenv
 import os, time
 from log import JsonlLogger
+import anyio
+from mcp.client.stdio import stdio_client, StdioServerParameters
+from mcp import ClientSession
 
 #load env variables
 load_dotenv()
@@ -64,5 +67,35 @@ class OpeniaGPT4ominiClient:
 
         return response.output_text, response.id
     
+    async def list_mcp_tools(self):
+        fs_params = StdioServerParameters(
+            command="npx",
+            args=[
+                "-y", "@modelcontextprotocol/server-filesystem",
+                r"C:\Users\angel\Projects",
+                r"C:\Users\angel\Desktop",
+                r"C:\Users\angel\OneDrive\Documentos\.universidad\.2025\s2\redes\proyecto1-redes",
+            ],
+        )
+        git_params = StdioServerParameters(
+            command="npx",
+            args=["-y", "@cyanheads/git-mcp-server"],
+        )
 
+        lines = []
+        async with stdio_client(fs_params) as (r, w):
+            async with ClientSession(r, w) as sess:
+                await sess.initialize()
+                res = await sess.list_tools()
+                lines += [f"- {t.name}: {t.description}" for t in res.tools]
 
+        async with stdio_client(git_params) as (r, w):
+            async with ClientSession(r, w) as sess:
+                await sess.initialize()
+                res = await sess.list_tools()
+                lines += [f"- {t.name}: {t.description}" for t in res.tools]
+
+        return "\n".join(lines)
+
+    def list_mcp_tools_sync(self):
+        return anyio.run(self.list_mcp_tools)

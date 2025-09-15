@@ -26,7 +26,7 @@ class SetWorkingDirIntent:
 
 Intent = Union[CreateRepoIntent, UpdateReadmeIntent, PushIntent, SetWorkingDirIntent]
 
-# helpersss
+# helpers
 # Conectores de slot (ruta, texto, commit)
 _TERMINATORS = (
     r'(?=\s+(?:y|e|con|hacer(?:le)?|haga|haz|commit|al\s+remoto|remoto\s+es|url\s+remoto|remote\s+url|'
@@ -62,13 +62,16 @@ def _extract_path(text: str) -> Optional[str]:
     Corta antes de 'al remoto', 'branch', 'el texto', etc.
     """
     patterns = [
-        r'\ben\s+["“]([^"”\r\n]+)["”]' + _TERMINATORS,
-        r'\bdel\s+(?:repo|repositorio)\s+["“]([^"”\r\n]+)["”]' + _TERMINATORS,
-        r'\bal\s+(?:repo|repositorio)\s+["“]([^"”\r\n]+)["”]' + _TERMINATORS,
+    r'\ben\s+la\s+ruta\s*:?\s*["“]([^"”\r\n]+)["”]' + _TERMINATORS,
+    r'\ben\s+la\s+ruta\s*:?\s*([A-Za-z]:[\\/][^:"<>|?\r\n]+?)' + _TERMINATORS,
 
-        r'\ben\s+([A-Za-z]:[\\/][^:"<>|?\r\n]+?)' + _TERMINATORS,
-        r'\bdel\s+(?:repo|repositorio)\s+([A-Za-z]:[\\/][^:"<>|?\r\n]+?)' + _TERMINATORS,
-        r'\bal\s+(?:repo|repositorio)\s+([A-Za-z]:[\\/][^:"<>|?\r\n]+?)' + _TERMINATORS,
+    r'\ben\s+["“]([^"”\r\n]+)["”]' + _TERMINATORS,
+    r'\bdel\s+(?:repo|repositorio)\s+["“]([^"”\r\n]+)["”]' + _TERMINATORS,
+    r'\bal\s+(?:repo|repositorio)\s+["“]([^"”\r\n]+)["”]' + _TERMINATORS,
+
+    r'\ben\s+([A-Za-z]:[\\/][^:"<>|?\r\n]+?)' + _TERMINATORS,
+    r'\bdel\s+(?:repo|repositorio)\s+([A-Za-z]:[\\/][^:"<>|?\r\n]+?)' + _TERMINATORS,
+    r'\bal\s+(?:repo|repositorio)\s+([A-Za-z]:[\\/][^:"<>|?\r\n]+?)' + _TERMINATORS,
     ]
     for pat in patterns:
         m = re.search(pat, text, re.IGNORECASE | re.DOTALL)
@@ -198,13 +201,16 @@ def parse_intent(user_text: str) -> Optional[Intent]:
             return CreateRepoIntent(repo_path=repo_path, readme_text=readme, commit_msg=msg)
 
     #  UPDATE README 
-    if re.search(r'\b(actualiza|update|escribe|modifica)\b.*\breadme\b', t, re.IGNORECASE) or \
-       re.search(r'\bescribe\s+en\s+el\s+readme\b', t, re.IGNORECASE):
-        # Soporta "en C:/..." y "del repo C:/..."
+    if re.search(r'\b(actualiza|update|escribe|modifica|crea|crear|genera|añade|agrega)\b.*\breadme\b', t, re.IGNORECASE) or \
+    re.search(r'\bescribe\s+en\s+el\s+readme\b', t, re.IGNORECASE) or \
+    re.search(r'\b(crea|crear)\s+un?\s+archivo\s+readme\b', t, re.IGNORECASE):
         p = _extract_path(t)
-        readme = _extract_readme_text(t)
-        msg = _extract_commit_msg(t) or "docs: update README"
-        if p and readme:
+        readme = _extract_readme_text(t) or "# README\n"
+        msg = _extract_commit_msg(t) or (
+            "docs: add README" if re.search(r'\b(crea|crear|genera|añade|agrega)\b', t, re.IGNORECASE)
+            else "docs: update README"
+        )
+        if p:
             return UpdateReadmeIntent(repo_path=p, readme_text=readme, commit_msg=msg)
 
     # PUSH
