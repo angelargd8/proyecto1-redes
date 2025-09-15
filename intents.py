@@ -24,7 +24,11 @@ class PushIntent:
 class SetWorkingDirIntent:
     repo_path: str
 
-Intent = Union[CreateRepoIntent, UpdateReadmeIntent, PushIntent, SetWorkingDirIntent]
+@dataclass
+class CreateDirectoryIntent:
+    path: str
+
+Intent = Union[CreateRepoIntent, UpdateReadmeIntent, PushIntent, SetWorkingDirIntent, CreateDirectoryIntent]
 
 # helpers
 # Conectores de slot (ruta, texto, commit)
@@ -186,6 +190,16 @@ def _extract_branch(text: str) -> Optional[str]:
 # parse_intent
 def parse_intent(user_text: str) -> Optional[Intent]:
     t = user_text.strip()
+
+    # Crear carpeta/directorio
+    if re.search(r'\b(crea|crear|genera|haz|hacer)\b.*\b(carpeta|directorio|folder)\b', t, re.IGNORECASE):
+        p = _extract_path(t)
+        if p:
+            name = _extract_name(t)
+            if name and os.path.isdir(p):
+                p = os.path.join(p, name)
+            return CreateDirectoryIntent(path=os.path.normpath(p))
+
 
     # CREATE REPO
     if re.search(r'\b(crea|crear|init|inicializa)\b.*\b(repo|repositorio)\b', t, re.IGNORECASE) or \

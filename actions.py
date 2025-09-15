@@ -1,7 +1,7 @@
 from typing import Optional, List
-from intents import Intent, CreateRepoIntent, UpdateReadmeIntent, PushIntent, SetWorkingDirIntent
-from mcpClient import create_repo_with_readme_and_commit, commit_readme_in_existing_repo,  create_remote_and_push
-
+from intents import Intent, CreateRepoIntent, UpdateReadmeIntent, PushIntent, SetWorkingDirIntent, CreateDirectoryIntent
+from mcpClient import create_repo_with_readme_and_commit, commit_readme_in_existing_repo,  create_remote_and_push, AsyncMCPClient
+import os, anyio
 
 ALLOWED_DIRS_DEFAULT = [
     r"C:/Users/angel/Projects",
@@ -24,6 +24,19 @@ def _allowed(path: str, allowed_dirs: List[str]) -> bool:
 
 def execute_intent(intent: Intent, *, allowed_dirs: Optional[List[str]] = None) -> str:
     allowed_dirs = allowed_dirs or ALLOWED_DIRS_DEFAULT
+
+    if isinstance(intent, CreateDirectoryIntent):
+        target = intent.path
+        if not _allowed(target, allowed_dirs):
+            return f"No permitido: {target} está fuera de las direcciones permitidas"
+        if ".git" in target.lower():
+            return "Por seguridad no creo carpetas dentro de .git"
+        async def _run():
+            async with AsyncMCPClient(allowed_dirs=allowed_dirs) as mcp:
+                await mcp.fs_create_directory(target)
+        anyio.run(_run)
+        return f"Carpeta creada: {target}"
+
 
     if isinstance(intent, CreateRepoIntent):
         if not _allowed(intent.repo_path, allowed_dirs):
