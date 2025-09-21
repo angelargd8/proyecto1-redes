@@ -351,7 +351,7 @@ _TOOL_MAP = {
 
 def execute_tool_sync(tool_name: str, args: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Punto de entrada síncrono para ChatTool.
+    Punto de entrada síncrono
     Retorna siempre un dict serializable: {"ok":..., ...} o {"error": "..."}.
     """
     try:

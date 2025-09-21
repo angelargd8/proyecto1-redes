@@ -1,24 +1,29 @@
-from __future__ import annotations
-import os, json, time, re, sys
-from typing import Optional, List, Dict, Any
-
-from client import OpeniaGPT4ominiClient
+from mcp_manager import MCPMultiplexer, MCPServerConfig
+from client import OpenAIResponsesClient
+from agent import MCPAgent
+import shutil, os, re, json, sys
+from agent import MCPAgent, DEFAULT_SYSTEM
+from intents import create_repo_hybrid
 from log import JsonlLogger
-
+from ZTRClient import ztr_execute_tool_http
 import anyio
 from mcp.client.stdio import stdio_client, StdioServerParameters
 from mcp import ClientSession
+from typing import Optional, List, Dict, Any
 
-from intents import parse_intent
-from actions import execute_intent
-from ZTRClient import ztr_execute_tool_http
-import re, traceback, anyio
 
-#para debbugear 
-DEBUG = False # ahorita esta en false, porque siento que se ve feo en el CLI
-def _dbg(*a):
-    if DEBUG:
-        print("[ChatTool DEBUG]", *a)
+NPX = os.environ.get("NPX_CMD") or shutil.which("npx") or r"C:\Program Files\nodejs\npx.cmd"
+FS_BIN = shutil.which("server-filesystem")
+GIT_BIN = shutil.which("git-mcp-server")
+
+def _catalog_for_prompt(mcp: MCPMultiplexer) -> str:
+    cat = mcp.list_all_tools_sync()
+    lines = ["Tools disponibles:"]
+    for srv, tools in cat.items():
+        for n in tools.keys():
+            lines.append(f"- {srv}:{n}")
+    return "\n".join(lines)
+
 
 def _norm_text(s: str) -> str:
     s = (s or "").strip()
@@ -26,12 +31,14 @@ def _norm_text(s: str) -> str:
     s = re.sub(r"\s+", " ", s)
     return s
 
-#---------------------------------------------------------------------------
+#--------------------------------------------------------------------------
+_GRAM_TRIG = re.compile(r'\b(corrige|arregla|revisa)\b', re.I)
+
+#--------------------------------------------------------------------------
 #trigger de zotero
 _APA_TRIGGER = re.compile(r"\b(cita|c[ií]tame|referencia|bibliograf[ií]a|formatea|apa)\b", re.I)
 
 ZTR_MCP_HTTP = "https://ztrmcp-990598886898.us-central1.run.app/mcp/sse?version=1.0"
-#--------------------------------------------------------------------------
 
 #-------------------------------------------------------------------------
 # trigger general de tema YouTubes
@@ -40,7 +47,6 @@ _YT_TOPIC = re.compile(
     re.I,
 )
 
-# esto es para el fallback de regiones, porque al parecer hay unas que la api no las toma porque tienen tilde
 COUNTRY_ALIASES = {
     "gt": "GT", "sv": "SV", "mx": "MX", "us": "US", "ar": "AR", "co": "CO", "pe": "PE",
     "cl": "CL", "es": "ES", "br": "BR", "uy": "UY", "py": "PY", "bo": "BO",
@@ -60,28 +66,36 @@ COUNTRY_ALIASES = {
     "bolivia": "BO",
 }
 
-#-----------------------------------------------------------
-ALLOWED_DIRS_DEFAULT = [
-    r"C:/Users/angel/Projects",
-    r"C:/Users/angel/Desktop",
-    r"C:/Users/angel/OneDrive/Documentos/.universidad/.2025/s2/redes/proyecto1-redes",
-    r"C:/Users/angel/OneDrive/Documentos/.universidad/.2025/s2/redes",
-]
+#-------------------------------------------------------------------------
 
-#-----------------------------------------------------------
-#mcp zotero
-def parse_cite_intent(text: str) -> dict | None:
-    t = (text or "").strip()
-    if not _APA_TRIGGER.search(t):
+def _trigger_gram(text: str):
+    if not _GRAM_TRIG.search(text): 
+        return None
+    # Texto entre comillas → corrige inline; si no, intenta archivo con fs:path
+    m = re.search(r'"([^"]+)"|“([^”]+)”', text)
+    if m:
+        payload = m.group(1) or m.group(2)
+        return {"action":"tool_call","server":"gram","tool":"gram_fix","args":{"text": payload, "lang":"es"}}
+    p = re.search(r'path\s*=\s*(\S+)', text)
+    if p:
+        return {"action":"tool_call","server":"gram","tool":"gram_fix_file","args":{"path": p.group(1), "lang":"es"}}
+    return None
+
+#-------------------------------------------------------------------------
+
+def _trigger_zotero_apa(text: str):
+    text = (text or "").strip()
+    if not _APA_TRIGGER.search(text): 
         return None
     # intenta extraer la URL
-    m = re.search(r'https?://\S+', t)
+    m = re.search(r'https?://\S+', text)
     url = m.group(0) if m else None
     if not url:
-        m2 = re.search(r'url\s*:\s*"(.*?)"', t, re.I)
+        m2 = re.search(r'url\s*:\s*"(.*?)"', text, re.I)
         url = m2.group(1) if m2 else None
     return {"action": "apa_from_url", "url": url}
 
+#-------------------------------------------------------------------------
 
 def run_cite_intent(intent: dict) -> str:
     url = (intent.get("url") or "").strip()
@@ -235,7 +249,7 @@ def _parse_keywords(text: str) -> list[str]:
         return [x.strip() for x in m.group(1).split(",") if x.strip()]
     return []
 
-def parse_yt_intent(text: str) -> dict | None:
+def _trigger_yt(text: str) -> dict | None:
     t = _norm_text(text)
     tl = t.lower()
     if not _YT_TOPIC.search(tl):
@@ -452,180 +466,136 @@ def run_yt_intent(intent: dict) -> str:
 
     return "No entendí la intención de YouTube."
 
-# LLM output text collector
-def _collect_text(resp) -> str:
-    txt = getattr(resp, "output_text", None)
-    if txt:
-        return txt
-    chunks = []
-    out = getattr(resp, "output", None)
-    if out is None and isinstance(resp, dict):
-        out = resp.get("output")
-    if out:
-        for item in out:
-            content = getattr(item, "content", None)
-            if content is None and isinstance(item, dict):
-                content = item.get("content", [])
-            if not content:
-                continue
-            for c in content:
-                t = getattr(c, "text", None)
-                if t is None and isinstance(c, dict):
-                    t = c.get("text")
-                if t:
-                    chunks.append(t)
-    if chunks:
-        return "\n".join(chunks)
-    st = getattr(resp, "status", None)
-    return f"(sin contenido; status={st})"
+    
 
-#-----------------------------------------------------------
-# Servicio de chat con tool-calling
-class ToolCallingChatService:
-    def __init__(self, model: str = "gpt-4o-mini", allowed_dirs: Optional[List[str]] = None, client: OpeniaGPT4ominiClient | None = None, logger: JsonlLogger | None = None):
-        self.llm = client or OpeniaGPT4ominiClient(model=model)
-        self.model = self.llm.model
-        self.allowed_dirs = allowed_dirs or ALLOWED_DIRS_DEFAULT
-        self.sessions: Dict[str, str] = {}  # session_id -> prev_response_id
-        self.logger = logger or JsonlLogger()
 
-    def _wait_until_ready(self, resp, *, poll_interval=0.25, timeout=60.0):
-        rid = resp.id
-        t0 = time.time()
-        status = getattr(resp, "status", None)
-        while status in ("in_progress", "queued") or status is None:
-            if time.time() - t0 > timeout:
-                break
-            time.sleep(poll_interval)
-            resp = self.llm.client.responses.retrieve(rid)
-            status = getattr(resp, "status", None)
-        _dbg("wait_until_ready ->", status)
-        return resp
-
-    def _drain_or_drop(self, prev_id: Optional[str]) -> Optional[str]:
-        if not prev_id:
-            return None
-        try:
-            r = self.llm.client.responses.retrieve(prev_id)
-            r = self._wait_until_ready(r)
-            if getattr(r, "status", None) == "completed":
-                return prev_id
-            _dbg("drain_or_drop: dropping prev (status=", getattr(r, "status", None), ")")
-            return None
-        except Exception as e:
-            _dbg("drain_or_drop error:", e)
-            return None
-
-    def ask(self, session_id: str, user_msg: str, max_output_tokens: int = 700) -> str:
-        prev_id_clean = self._drain_or_drop(self.sessions.get(session_id))
-
-        self.logger.event(
-            "chat", "request",
-            session_id=session_id,
-            turn=None,
-            request={"text": user_msg, "model": self.model}
-        )
-
-        # list tools
-        if re.search(r'\b(list|lista)\s+(tools|herramientas)\b', user_msg, re.I):
-            text = self.llm.list_mcp_tools_sync()
-            self.sessions[session_id] = None
-            self.logger.event("chat", "list_tools",
-                session_id=session_id,
-                turn=None,
-                response={"text": text}
-            )
-            return text
-        
-        #  Git
-        git_intent = parse_intent(user_msg)
-        if git_intent:
-            try:
-                result = execute_intent(git_intent, allowed_dirs=self.allowed_dirs)
-            except Exception as e:
-                result = f"Error al ejecutar la acción Git: {e}"
-            self.logger.event("git", "intent",
-                session_id=session_id,
-                turn=None,
-                intent=git_intent.__class__.__name__,
-                result_preview=str(result)[:400]
-            )
-            self.sessions[session_id] = None
-            return str(result)
-
-        # YouTube
-        yt_int = parse_yt_intent(_norm_text(user_msg))
-        if yt_int:
-            text = run_yt_intent(yt_int)
-            self.logger.event("yt", "intent",
-                session_id=session_id,
-                turn=None,
-                intent=yt_int,
-                result_preview=text[:400]
-            )
-            self.sessions[session_id] = None
-            return text
-        
-
-        # Detecta intención de crear referencia apa
-        cite_int = parse_cite_intent(_norm_text(user_msg))
-        if cite_int:
-            text = run_cite_intent(cite_int)
-            self.logger.event("ztr", "intent",
-                session_id=session_id,
-                turn=None,
-                intent=cite_int,
-                result_preview=str(text)[:400]
-            )
-            self.sessions[session_id] = None
-            return text
-        
-        # LLM normal en el caso que no tenga nada que ver con Git o YouTube
-        user_input_parts = [
-            {
-                "role": "user",
-                "content": [
-                    {"type": "input_text", "text": user_msg}
-                ]
-            }
+class ChatService:
+    def __init__(self, *, model: str = "gpt-4o-mini", fs_dirs: List[str] | None = None, logger: JsonlLogger | None = None ):
+        self.llm = OpenAIResponsesClient(model=model)
+        servers = []
+        # filesystem
+        dirs = fs_dirs or [
+            r"C:\\Users\\angel\\Projects",
+            r"C:\\Users\\angel\\Desktop",
+            r"C:\\Users\\angel\\OneDrive\\Documentos\\.universidad\\.2025\\s2\\redes\\dos",
+            r"C:\\Users\\angel\\OneDrive\\Documentos\\.universidad\\.2025\\s2\\redes",
+            r"C:\\Users\\angel\\OneDrive\\Documentos\\.universidad\\.2025\\s2\\redes\\proyecto1-redes",
         ]
-        create_kwargs = dict(
-            model=self.model,
-            input=user_input_parts,
-            max_output_tokens=max_output_tokens,
-            store=True,
-        )
-        if prev_id_clean:
-            create_kwargs["previous_response_id"] = prev_id_clean
 
-        resp = self.llm.client.responses.create(**create_kwargs)
-        self.logger.event("llm", "responses.create",
-            session_id=session_id,
-            request={"input": user_input_parts}
-        )
+        servers = []
+        if FS_BIN:
+            servers.append(MCPServerConfig(name="fs", command=FS_BIN, args=[*dirs]))
+        else:
+            servers.append(MCPServerConfig(name="fs", command=NPX, args=["-y", "@modelcontextprotocol/server-filesystem", *dirs]))
 
-        _dbg("create status:", getattr(resp, "status", None))
-        resp = self._wait_until_ready(resp)
-        self.logger.event("llm", "poll",
-            session_id=session_id,
-            response={"id": resp.id, "status": getattr(resp, "status", None)}
-        )
+        if GIT_BIN:
+            servers.append(MCPServerConfig(name="git", command=GIT_BIN, args=[]))
+        else:
+            servers.append(MCPServerConfig(name="git", command=NPX, args=["-y", "@cyanheads/git-mcp-server"]))
 
-        text = _collect_text(resp)
-        _dbg("final status:", getattr(resp, "status", None), "text len:", len(text))
+        # youtube
+        YT_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "YTServerMCP.py")
+        if os.path.isfile(YT_PATH):
+            servers.append(MCPServerConfig(name="yt", command=sys.executable, args=[YT_PATH]))
+        
+        # grammar
+        GRAM_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "grammarMCP.py")
+        if os.path.isfile(GRAM_PATH):
+            servers.append(MCPServerConfig(name="gram", command=sys.executable, args=[GRAM_PATH]))
 
-        # log
+        self.mcp = MCPMultiplexer(servers)
+        self.mcp.start_sync() 
+        
+        tools_text = _catalog_for_prompt(self.mcp)
+        # self.agent = MCPAgent(self.llm, self.mcp)
+        system_msg = tools_text + "\n\n" + DEFAULT_SYSTEM
+        self.agent = MCPAgent(self.llm, self.mcp, system_prompt=system_msg)
+        self.logger = logger or JsonlLogger()
+    
+
+
+    def list_tools(self) -> str:
+        catalog = self.mcp.list_all_tools_sync()
+        lines = []
+        for srv, tools in catalog.items():
+            lines.append(f"[{srv}]")
+            for n, d in tools.items():
+                lines.append(f"- {n}: {d}")
+        return "\n".join(lines)
+
+    def ask(self, user_msg: str) -> str:
         self.logger.event(
-            "chat", "response",
-            session_id=session_id,
-            turn=None,
-            response={
-                "id": resp.id,
-                "status": getattr(resp, "status", None),
-                "text": text,
-                "model": self.model,
-            },
-            request={"text": user_msg},
+            channel="system",
+            kind="info",
+            info="User message",
+            user_message=user_msg,
         )
-        self.sessions[session_id] = resp.id
-        return text
+
+        out = None
+
+        try:
+            # list tools
+            if re.search(r'\b(list|lista)\s+(tools|herramientas)\b', user_msg, re.I):
+                out = self.list_tools()
+
+            if out is None:
+                m = re.match(r'^\s*repo\s+create\s+"?([^"]+)"?(?:\s+remote=(\S+))?', user_msg.strip(), re.I)
+                if m:
+                    repo_path = m.group(1)
+                    remote = m.group(2)
+                    out = create_repo_hybrid(
+                        self.mcp,
+                        repo_path=repo_path,
+                        readme_text="# README\n",
+                        commit_msg="initial commit",
+                        remote_url=remote,
+                        default_branch="main",
+                        private_remote=True,
+                    )
+            
+            # YouTube
+            if out is None:
+                yt_int = _trigger_yt(_norm_text(user_msg))
+                if yt_int:
+                    out = run_yt_intent(yt_int)
+                    self.logger.event("yt", "intent", intent=yt_int, result_preview=str(out)[:400])
+            
+
+            # zotero
+            if out is None:
+                cite_int = _trigger_zotero_apa(_norm_text(user_msg))
+                if cite_int:
+                    out = run_cite_intent(cite_int)
+                    self.logger.event("ztr", "intent", intent=cite_int, result_preview=str(out)[:400])
+
+
+            #grammar
+            if out is None:
+                tc = _trigger_gram(user_msg)
+                if tc:
+                    self.logger.event("gram", "intent", intent=tc)
+                    out = self.agent.run(json.dumps(tc, ensure_ascii=False))
+            
+            # Agente normal
+            if out is None:
+                out = self.agent.run(user_msg)
+
+            return out
+
+        except Exception as e:
+            out = f"ERROR: {e}"
+            self.logger.event(
+                channel="chat",
+                kind="response_error",
+                error=str(e),
+            )
+
+        finally:
+            # log de response final
+            self.logger.event(
+                channel="chat",
+                kind="response",
+                answer=str(out)[:4000],
+            )
+
+            return out

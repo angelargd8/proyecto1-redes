@@ -22,7 +22,9 @@ This project implements a CLI chatbot that acts as an MCP host and connects to m
   - Register keywords and search recent videos by keyword(s).
   - Compute a simple trend score and get per-keyword “deep dives”.
   - Export results (CSV/JSON).
-
+- **Language tool (local MCP server)**:
+  - Verify grammar
+  - Fix grammar 
 
 
 ### Create the environment:
@@ -45,11 +47,24 @@ pip install -r requirements.txt
 
 If you want to install it one by one:
 ```
-pip install anthropic dotenv openai mpc "mcp[cli]" google-api-python-client
+pip install anthropic dotenv openai mpc "mcp[cli]" google-api-python-client language-tool-python
 ```
 
 
 ## Example prompts: 
+
+- crea una carpteta que se llame HOLA en C:\Users\angel\OneDrive\Documentos\.universidad\.2025\s2\redes
+
+- actualiza una carpeta que se llame HOLA en C:\Users\angel\OneDrive\Documentos\.universidad\.2025\s2\redes y que tenga dentro un readme.md y diga hola
+
+- ahora puedes hacer que HOLA sea un repositorio?
+
+- puedes hacer el primer commit y que diga: initial commit?
+
+- repo create "C:\Users\angel\OneDrive\Documentos\.universidad\.2025\s2\redes\HOLA" remote=https://github.com/angelargd8/HOLA.git
+
+- puedes listar el contenido de la carpeta: C:\Users\angel\OneDrive\Documentos\.universidad\.2025\s2\redes
+
 
 - crea una carpteta en C:/Users/angel/OneDrive/Documentos/.universidad/.2025/s2/redes/ que se llame CARPETA
 
@@ -57,7 +72,6 @@ pip install anthropic dotenv openai mpc "mcp[cli]" google-api-python-client
 
 - Escribe en el README del repo C:/Users/angel/OneDrive/Documentos/.universidad/.2025/s2/redes/pruebaMCP el texto: Notas de uso y haz commit que diga docs: notes
 
-- Haz push del repo C:/Users/angel/OneDrive/Documentos/.universidad/.2025/s2/redes/pruebaMCP al remoto https://github.com/angelargd8/pruebaMCP.git  en la branch main
 
 ## Example prompts for youtube api:
 - lista códigos de region de youtube 
@@ -77,7 +91,8 @@ pip install anthropic dotenv openai mpc "mcp[cli]" google-api-python-client
 
 - haz la bibliografia de https://normas-apa.org/introduccion/que-son-las-normas-apa/
 
-
+## Example promps for language tool:
+- puedes corregir la siguiente oracion: hola como estas
 
 # References: 
 - https://modelcontextprotocol.io/quickstart/server

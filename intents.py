@@ -1,244 +1,355 @@
-from dataclasses import dataclass
-from typing import Optional, Union
-import re, os
+from __future__ import annotations
+import os
+import re
+import subprocess
+from typing import Dict, Any, Sequence, Optional
 
-@dataclass
-class CreateRepoIntent:
-    repo_path: str
-    readme_text: str
-    commit_msg: str
+from mcp_manager import MCPMultiplexer
 
-@dataclass
-class UpdateReadmeIntent:
-    repo_path: str
-    readme_text: str
-    commit_msg: str
+#  Utilidades Git/CLI 
 
-@dataclass
-class PushIntent:
-    repo_path: str
-    remote_url: str
-    branch: str = "main"
+def _run_git(repo: str, *args: str) -> str:
+    p = subprocess.run(["git", "-C", repo, *args], capture_output=True, text=True)
+    if p.returncode != 0:
+        raise RuntimeError((p.stderr or p.stdout or "git failed").strip())
+    return (p.stdout or "").strip()
 
-@dataclass
-class SetWorkingDirIntent:
-    repo_path: str
+def _try_git(repo: str, *args: str) -> tuple[bool, str]:
+    try:
+        return True, _run_git(repo, *args)
+    except Exception as e:
+        return False, str(e)
 
-@dataclass
-class CreateDirectoryIntent:
-    path: str
-
-Intent = Union[CreateRepoIntent, UpdateReadmeIntent, PushIntent, SetWorkingDirIntent, CreateDirectoryIntent]
-
-# helpers
-# Conectores de slot (ruta, texto, commit)
-_TERMINATORS = (
-    r'(?=\s+(?:y|e|con|hacer(?:le)?|haga|haz|commit|al\s+remoto|remoto\s+es|url\s+remoto|remote\s+url|'
-    r'en\s+la\s+branch|la\s+rama|rama|branch|que|el\s+texto|texto|el\s+contenido|contenido)\b|$)'
-)
-
-def _unquote(s: str) -> str:
-    s = s.strip()
-    if (s.startswith('"') and s.endswith('"')) or (s.startswith('“') and s.endswith('”')):
-        return s[1:-1].strip()
-    return s
-
-def _clean_path(p: str) -> str:
-    p = _unquote(p)
-    p = p.strip().rstrip(" .")
-    return os.path.normpath(p)
-
-def _strip_urls(text: str) -> str:
-    return re.sub(r'https?://\S+|git@[^:\s]+:[^\s]+\b', ' ', text)
-
-
-def _extract_name(text: str) -> Optional[str]:
-    m = re.search(r'\bque\s+se\s+llame\s+([A-Za-z0-9._\-]+)\b', text, re.IGNORECASE)
+def _slug_from_github_url(url: str) -> Optional[str]:
+    url = url.strip().rstrip("/")
+    m = (
+        re.match(r"^https://github\.com/([^/]+/[^/]+?)(?:\.git)?$", url, re.I)
+        or re.match(r"^git@github\.com:([^/]+/[^/]+?)(?:\.git)?$", url, re.I)
+    )
     return m.group(1) if m else None
 
+def _ensure_remote_repo_github(remote_url: str, private: bool = True) -> None:
+    slug = _slug_from_github_url(remote_url)
+    if not slug:
+        return
+    v = subprocess.run(["gh", "repo", "view", slug], capture_output=True, text=True)
+    if v.returncode == 0:
+        return
+    args = ["gh", "repo", "create", slug, "--confirm"]
+    if private:
+        args.insert(3, "--private")
+    c = subprocess.run(args, capture_output=True, text=True)
+    if c.returncode != 0:
+        err = (c.stderr or c.stdout or "").strip()
+        raise RuntimeError("gh repo create falló:\n" + err)
 
-def _extract_path(text: str) -> Optional[str]:
-    """
-    Soporta:
-      - en "C:/..."; en C:/...
-      - del repo "C:/..."; del repo C:/...
-      - al repositorio "C:/..."; al repositorio C:/...
-    Corta antes de 'al remoto', 'branch', 'el texto', etc.
-    """
-    patterns = [
-    r'\ben\s+la\s+ruta\s*:?\s*["“]([^"”\r\n]+)["”]' + _TERMINATORS,
-    r'\ben\s+la\s+ruta\s*:?\s*([A-Za-z]:[\\/][^:"<>|?\r\n]+?)' + _TERMINATORS,
+#  FS y llamadas MCP 
 
-    r'\ben\s+["“]([^"”\r\n]+)["”]' + _TERMINATORS,
-    r'\bdel\s+(?:repo|repositorio)\s+["“]([^"”\r\n]+)["”]' + _TERMINATORS,
-    r'\bal\s+(?:repo|repositorio)\s+["“]([^"”\r\n]+)["”]' + _TERMINATORS,
+def _fs_path(p: str) -> str:
+    return os.path.normpath(p).replace("\\", "/")
 
-    r'\ben\s+([A-Za-z]:[\\/][^:"<>|?\r\n]+?)' + _TERMINATORS,
-    r'\bdel\s+(?:repo|repositorio)\s+([A-Za-z]:[\\/][^:"<>|?\r\n]+?)' + _TERMINATORS,
-    r'\bal\s+(?:repo|repositorio)\s+([A-Za-z]:[\\/][^:"<>|?\r\n]+?)' + _TERMINATORS,
-    ]
-    for pat in patterns:
-        m = re.search(pat, text, re.IGNORECASE | re.DOTALL)
-        if m:
-            return _clean_path(m.group(1))
+def _call_git(mcp: MCPMultiplexer, tool_names: Sequence[str], args: Dict[str, Any]) -> Dict[str, Any]:
+    last = {"error": "no_tool_ran"}
+    for name in tool_names:
+        out = mcp.call_tool_sync("git", name, args)
+        if not isinstance(out, dict):
+            return {"value": out}
+        if "error" not in out:
+            return out
+        last = out
+    return last
 
-    # Fallback: ultima ruta absoluta
-    no_urls = _strip_urls(text)
-    m_all = list(re.finditer(r'([A-Za-z]:[\\/][^:"<>|?\r\n]+)', no_urls))  # nota: ':' EXCLUIDO
-    if m_all:
-        cand = m_all[-1].group(1)
-        
-        cand = re.sub(r'\s+(?:al\s+remoto|link|url|enlace|en\s+la\s+branch|branch|el\s+texto|texto|el\s+contenido|contenido)\b.*$',
-                      '', cand, flags=re.IGNORECASE)
-        return _clean_path(cand)
-    return None
+def _call_fs(mcp: MCPMultiplexer, tool_names: Sequence[str], args: Dict[str, Any]) -> Dict[str, Any]:
+    last = {"error": "no_tool_ran"}
+    a = dict(args)
+    if "path" in a and isinstance(a["path"], str):
+        a["path"] = _fs_path(a["path"])
+    if "dest" in a and isinstance(a["dest"], str):
+        a["dest"] = _fs_path(a["dest"])
+    for name in tool_names:
+        out = mcp.call_tool_sync("fs", name, a)
+        if not isinstance(out, dict):
+            return {"value": out}
+        if "error" not in out:
+            return out
+        last = out
+    return last
 
-def _extract_readme_text(text: str) -> Optional[str]:
-    """
-    Soporta:
-      - 'readme que diga: ...'
-      - 'el texto: ...'
-      - 'README "..."'
-      (sin comillas también; corta en conectores)
-    """
-    m = re.search(
-        r'\breadme\s+que\s+dig[aá]\s*:?\s*(.+?)' + _TERMINATORS,
-        text, re.IGNORECASE | re.DOTALL
+#  Helpers 
+
+def _ensure_workdir(mcp: MCPMultiplexer, repo_abs: str) -> None:
+    r = _call_git(mcp, ["git_set_working_dir", "git:set_working_dir"], {"path": repo_abs})
+    if "error" in r:
+        # el CLI seguirá funcionando aunque la tool falle
+        pass
+
+def _ensure_git_identity(repo_abs: str) -> None:
+    ok, _ = _try_git(repo_abs, "config", "--get", "user.name")
+    if not ok:
+        _run_git(repo_abs, "config", "user.name", "autobot")
+    ok, _ = _try_git(repo_abs, "config", "--get", "user.email")
+    if not ok:
+        _run_git(repo_abs, "config", "user.email", "autobot@example.com")
+
+def _git_add_all(mcp: MCPMultiplexer, repo_abs: str) -> None:
+    # Intenta con MCP 
+    tried_mcp = False
+    for payload in ({"paths": ["."]}, {"files": ["."]}, {"path": "."}):
+        r = _call_git(mcp, ["git_add", "git:add"], payload)
+        tried_mcp = True
+        if "error" not in r:
+            break
+    # y si nada sirve, CLI 
+    _run_git(repo_abs, "add", "-A")
+
+def _has_head(repo_abs: str) -> bool:
+    p = subprocess.run(["git", "-C", repo_abs, "rev-parse", "--verify", "HEAD"],
+                       capture_output=True, text=True)
+    return p.returncode == 0
+
+def _has_staged(repo_abs: str) -> bool:
+    ok, out = _try_git(repo_abs, "diff", "--cached", "--name-only")
+    return ok and bool(out.strip())
+
+def _checkout_or_create_branch(mcp: MCPMultiplexer, repo_abs: str, branch: str) -> None:
+    r = _call_git(mcp, ["git_checkout", "git:checkout", "git_switch", "git:switch"], {"branchOrPath": branch})
+    if "error" in r:
+        _run_git(repo_abs, "checkout", "-B", branch)
+
+def _safe_capture(cmd: list[str]) -> str:
+    try:
+        p = subprocess.run(cmd, capture_output=True, text=True)
+        return (p.stdout or p.stderr or "").strip()
+    except Exception:
+        return ""
+
+#  Intents  
+
+def commit_all(
+    mcp: MCPMultiplexer,
+    repo_path: str,
+    message: str,
+    *,
+    allow_empty_if_no_head: bool = True,
+) -> str:
+    """Stagea todo y hace commit robusto (MCP + fallback CLI)."""
+    repo_abs = os.path.normpath(repo_path)
+    _ensure_workdir(mcp, repo_abs)
+    _ensure_git_identity(repo_abs)
+    _git_add_all(mcp, repo_abs)
+
+    staged = _has_staged(repo_abs)
+    has_head = _has_head(repo_abs)
+
+    if not staged and not has_head and allow_empty_if_no_head:
+        _run_git(repo_abs, "commit", "--allow-empty", "-m", message)
+    elif staged:
+        r = _call_git(mcp, ["git_commit", "git:commit"], {"message": message})
+        if "error" in r:
+            _run_git(repo_abs, "commit", "-m", message)
+    # else: nada nuevo que commitear
+
+    head = _safe_capture(["git", "-C", repo_abs, "rev-parse", "--short", "HEAD"])
+    log1 = _safe_capture(["git", "-C", repo_abs, "log", "--oneline", "-n", "1"])
+    status = _safe_capture(["git", "-C", repo_abs, "status", "--porcelain"])
+    return (
+        f"Commit listo en {repo_abs}.\n"
+        f"HEAD: {head or '(sin commits)'} | último commit: {log1 or '(no hay)'}\n"
+        f"Status (porcelain):\n{status or '(limpio)'}"
     )
-    if m:
-        return _unquote(m.group(1).strip())
 
-    m = re.search(
-        r'\bel\s+texto\s*:?\s*(.+?)' + _TERMINATORS,
-        text, re.IGNORECASE | re.DOTALL
+def set_remote_and_push(
+    mcp: MCPMultiplexer,
+    repo_path: str,
+    remote_url: str,
+    *,
+    branch: str = "main",
+    private_remote: bool = True,
+) -> str:
+    repo_abs = os.path.normpath(repo_path)
+    _ensure_workdir(mcp, repo_abs)
+
+    # Crear repo remoto si falta 
+    _ensure_remote_repo_github(remote_url, private=private_remote)
+
+    # Intento MCP y verificación/corrección por CLI
+    _call_git(
+        mcp,
+        ["git_remote", "git:remote", "git_remote_add", "git:remote_add", "git_set_remote"],
+        {"name": "origin", "url": remote_url},
     )
-    if m:
-        return _unquote(m.group(1).strip())
+    ok, cur = _try_git(repo_abs, "remote", "get-url", "origin")
+    if ok:
+        if cur != remote_url:
+            _run_git(repo_abs, "remote", "set-url", "origin", remote_url)
+        remote_msg = "origin configurado (verificado por CLI)."
+    else:
+        _run_git(repo_abs, "remote", "add", "origin", remote_url)
+        remote_msg = "origin agregado (CLI)."
 
-    m = re.search(r'\bREADME\b\s*["“](.+?)["”]', text, re.IGNORECASE | re.DOTALL)
-    if m:
-        return m.group(1).strip()
+    # Push con upstream (CLI y luego MCP si hiciera falta)
+    ok_push, push_out = _try_git(repo_abs, "push", "-u", "origin", branch)
+    if not ok_push:
+        rpush = _call_git(mcp, ["git_push", "git:push"], {"remote": "origin", "branch": branch, "set_upstream": True})
+        if "error" in rpush:
+            return (
+                f"Remoto configurado pero falló el push.\n"
+                f"CLI: {push_out}\nMCP: {rpush}\n"
+                "Solución: autentícate en GitHub:\n"
+                "  gh auth login\n  gh auth status\n"
+                f"Luego: git -C \"{repo_abs}\" push -u origin {branch}"
+            )
 
-    # 'contenido: ...' (alias)
-    m = re.search(
-        r'\bcontenido\s*:?\s*(.+?)' + _TERMINATORS,
-        text, re.IGNORECASE | re.DOTALL
+    ok_ls, _ = _try_git(repo_abs, "ls-remote", "--heads", "origin")
+    rem = _safe_capture(["git", "-C", repo_abs, "remote", "-v"])
+    br = _safe_capture(["git", "-C", repo_abs, "branch", "-vv"])
+    return (
+        f"Remoto: {remote_url} → {remote_msg} "
+        f"{'Push OK.' if ok_ls else 'Push realizado (verifica auth si falla ls-remote).'}\n"
+        f"Remotos:\n{rem}\nRamas:\n{br}"
     )
-    if m:
-        return _unquote(m.group(1).strip())
 
-    return None
+def _verify_head(repo_abs: str) -> bool:
+    p = subprocess.run(["git","-C",repo_abs,"rev-parse","--verify","HEAD"],
+                       capture_output=True, text=True)
+    return p.returncode == 0
 
-def _extract_commit_msg(text: str) -> Optional[str]:
-    """
-    Soporta:
-      - 'commit que diga: ...'
-      - 'commit: ...'
-      - 'haga/haz/hacer(le) un commit ...'
-      - 'commit ...'
-    """
-    m = re.search(
-        r'\bcommit\s+que\s+dig[aá]\s*:?\s*(.+?)' + _TERMINATORS,
-        text, re.IGNORECASE | re.DOTALL
+def _commit_cli_force(repo_abs: str, message: str) -> tuple[bool, str]:
+    """Hace commit por CLI y devuelve (ok, detalle)."""
+    # primero prueba commit normal
+    p = subprocess.run(["git","-C",repo_abs,"commit","-m",message],
+                       capture_output=True, text=True)
+    if p.returncode == 0 and _verify_head(repo_abs):
+        return True, (p.stdout or p.stderr or "").strip()
+
+    # si no había nada staged y no existe HEAD, permite vacío
+    if not _verify_head(repo_abs):
+        p2 = subprocess.run(["git","-C",repo_abs,"commit","--allow-empty","-m",message],
+                            capture_output=True, text=True)
+        if p2.returncode == 0 and _verify_head(repo_abs):
+            return True, (p2.stdout or p2.stderr or "").strip()
+
+    # fallo: devuelve detalle
+    det = (p.stdout + p.stderr if p.stdout or p.stderr else "") or "commit failed"
+    if not det.strip():
+        det = "commit failed (no output)"
+    return False, det.strip()
+
+def commit_all(
+    mcp: MCPMultiplexer,
+    repo_path: str,
+    message: str,
+    *,
+    allow_empty_if_no_head: bool = True,
+) -> str:
+    repo_abs = os.path.normpath(repo_path)
+    _ensure_workdir(mcp, repo_abs)
+    _ensure_git_identity(repo_abs)
+
+    # Add (MCP to CLI)
+    _git_add_all(mcp, repo_abs)
+
+    # intenta commit por MCP
+    r = _call_git(mcp, ["git_commit","git:commit"], {"message": message})
+    # pase lo que pase, verifica HEAD; si no existe, fuerza commit por CLI
+    if not _verify_head(repo_abs):
+        ok, detail = _commit_cli_force(repo_abs, message)
+        if not ok:
+            staged = _safe_capture(["git","-C",repo_abs,"diff","--cached","--name-status"])
+            status = _safe_capture(["git","-C",repo_abs,"status","--porcelain=v1"])
+            return (
+                "No se pudo materializar el commit.\n"
+                f"Detalle CLI: {detail}\n"
+                f"Staged (--cached):\n{staged or '(vacío)'}\n"
+                f"Status:\n{status or '(limpio)'}\n"
+                "Sugerencias:\n"
+                "  - Asegúrate de que el repo no tenga hooks que rechacen el commit.\n"
+                "  - Verifica permisos de escritura en la carpeta.\n"
+                "  - Prueba manualmente: git -C \"{repo_abs}\" commit -m \"{message}\""
+            )
+
+    head = _safe_capture(["git","-C",repo_abs,"rev-parse","--short","HEAD"])
+    log1 = _safe_capture(["git","-C",repo_abs,"log","--oneline","-n","1"])
+    status = _safe_capture(["git","-C",repo_abs,"status","--porcelain"])
+    return (
+        f"Commit listo en {repo_abs}.\n"
+        f"HEAD: {head or '(sin commits)'} | último commit: {log1 or '(no hay)'}\n"
+        f"Status (porcelain):\n{status or '(limpio)'}"
     )
-    if m:
-        return _unquote(m.group(1).strip())
 
-    m = re.search(
-        r'\bcommit\s*:\s*(.+?)' + _TERMINATORS,
-        text, re.IGNORECASE | re.DOTALL
-    )
-    if m:
-        return _unquote(m.group(1).strip())
+def create_repo_hybrid(
+    mcp: MCPMultiplexer,
+    repo_path: str,
+    readme_text: str,
+    commit_msg: str,
+    *,
+    remote_url: str | None = None,
+    default_branch: str = "main",
+    private_remote: bool = True,
+) -> str:
+    repo_abs = os.path.normpath(repo_path)
 
-    m = re.search(
-        r'\b(?:haga|haz|hacer(?:le)?)\s+un\s+commit\s+(.+?)' + _TERMINATORS,
-        text, re.IGNORECASE | re.DOTALL
-    )
-    if m:
-        return _unquote(m.group(1).strip())
+    # Carpeta + README si falta
+    r1 = _call_fs(mcp, ["create_directory","filesystem:create_directory"], {"path": repo_abs})
+    if "error" in r1:
+        return f"Error al crear carpeta: {r1}"
+    readme = os.path.join(repo_abs, "README.md")
+    if not os.path.exists(readme):
+        r2 = _call_fs(mcp, ["write_file","filesystem:write_file"], {"path": readme, "content": readme_text})
+        if "error" in r2:
+            return f"Error al escribir README.md: {r2}"
 
-    m = re.search(
-        r'\bcommit\s+(.+?)' + _TERMINATORS,
-        text, re.IGNORECASE | re.DOTALL
-    )
-    if m:
-        return _unquote(m.group(1).strip())
+    # init + rama + identidad
+    _ensure_workdir(mcp, repo_abs)
+    r_init = _call_git(mcp, ["git_init","git:init"], {})
+    if "error" in r_init:
+        # fallback: init por CLI
+        _run_git(repo_abs, "init")
+    _checkout_or_create_branch(mcp, repo_abs, default_branch)
+    _ensure_git_identity(repo_abs)
 
-    return None
+    # add + commit (siempre verificado)
+    _git_add_all(mcp, repo_abs)
 
-def _extract_remote(text: str) -> Optional[str]:
-    m = re.search(r'(https?://[^\s]+|git@[^:\s]+:[^\s]+\.git)', text, re.IGNORECASE)
-    return m.group(1).strip() if m else None
+    # commit por MCP
+    _call_git(mcp, ["git_commit","git:commit"], {"message": commit_msg})
 
-def _extract_branch(text: str) -> Optional[str]:
-    """
-    Soporta:
-      - 'en la branch main'
-      - 'en la branch del main'
-      - 'branch: main'
-      - 'rama main'
-    """
-    m = re.search(r'\b(?:en\s+la\s+)?branch(?:\s*:\s*|\s+)(?:del\s+)?([A-Za-z0-9._\-./]+)\b',
-                  text, re.IGNORECASE)
-    if m:
-        return m.group(1)
-    m = re.search(r'\brama(?:\s*:\s*|\s+)(?:del\s+)?([A-Za-z0-9._\-./]+)\b',
-                  text, re.IGNORECASE)
-    return m.group(1) if m else None
+    # verificación; si no hay HEAD, fuerza por CLI
+    if not _verify_head(repo_abs):
+        ok, detail = _commit_cli_force(repo_abs, commit_msg)
+        if not ok:
+            staged = _safe_capture(["git","-C",repo_abs,"diff","--cached","--name-status"])
+            status = _safe_capture(["git","-C",repo_abs,"status","--porcelain=v1"])
+            return (
+                "Repo creado pero el commit inicial NO se materializó.\n"
+                f"Detalle CLI: {detail}\n"
+                f"Staged (--cached):\n{staged or '(vacío)'}\n"
+                f"Status:\n{status or '(limpio)'}"
+            )
 
-# parse_intent
-def parse_intent(user_text: str) -> Optional[Intent]:
-    t = user_text.strip()
-
-    # Crear carpeta/directorio
-    if re.search(r'\b(crea|crear|genera|haz|hacer)\b.*\b(carpeta|directorio|folder)\b', t, re.IGNORECASE):
-        p = _extract_path(t)
-        if p:
-            name = _extract_name(t)
-            if name and os.path.isdir(p):
-                p = os.path.join(p, name)
-            return CreateDirectoryIntent(path=os.path.normpath(p))
-
-
-    # CREATE REPO
-    if re.search(r'\b(crea|crear|init|inicializa)\b.*\b(repo|repositorio)\b', t, re.IGNORECASE) or \
-       (re.search(r'\bque\s+se\s+llame\b', t, re.IGNORECASE) and re.search(r'\ben\s+', t, re.IGNORECASE)):
-        base = _extract_path(t)
-        name = _extract_name(t)
-        readme = _extract_readme_text(t) or "# README\n"
-        msg = _extract_commit_msg(t) or "chore: init"
-        if base:
-            repo_path = base
-            if name and os.path.isdir(base):
-                repo_path = os.path.join(base, name)
-            return CreateRepoIntent(repo_path=repo_path, readme_text=readme, commit_msg=msg)
-
-    #  UPDATE README 
-    if re.search(r'\b(actualiza|update|escribe|modifica|crea|crear|genera|añade|agrega)\b.*\breadme\b', t, re.IGNORECASE) or \
-    re.search(r'\bescribe\s+en\s+el\s+readme\b', t, re.IGNORECASE) or \
-    re.search(r'\b(crea|crear)\s+un?\s+archivo\s+readme\b', t, re.IGNORECASE):
-        p = _extract_path(t)
-        readme = _extract_readme_text(t) or "# README\n"
-        msg = _extract_commit_msg(t) or (
-            "docs: add README" if re.search(r'\b(crea|crear|genera|añade|agrega)\b', t, re.IGNORECASE)
-            else "docs: update README"
+    # remoto + push (igual que ya lo tenías)
+    remote_summary = "Sin remoto."
+    if remote_url:
+        remote_summary = set_remote_and_push(
+            mcp, repo_abs, remote_url, branch=default_branch, private_remote=private_remote
         )
-        if p:
-            return UpdateReadmeIntent(repo_path=p, readme_text=readme, commit_msg=msg)
 
-    # PUSH
-    if re.search(r'\bpush\b', t, re.IGNORECASE):
-        p = _extract_path(t)
-        remote = _extract_remote(t)
-        branch = _extract_branch(t) or "main"
-        if p and remote:
-            return PushIntent(repo_path=p, remote_url=remote, branch=branch)
+    # resumen
+    head = _safe_capture(["git","-C",repo_abs,"rev-parse","--short","HEAD"])
+    log1 = _safe_capture(["git","-C",repo_abs,"log","--oneline","-n","1"])
+    br   = _safe_capture(["git","-C",repo_abs,"branch","-vv"])
+    rem  = _safe_capture(["git","-C",repo_abs,"remote","-v"])
+    status = _safe_capture(["git","-C",repo_abs,"status","--porcelain"])
+    try:
+        remote_heads = _run_git(repo_abs, "ls-remote", "--heads", "origin") if remote_url else ""
+    except Exception:
+        remote_heads = "(no accesible)"
 
-    # SET WORKING DIR
-    if re.search(r'\b(usa|establece|set|cambia)\b.*\b(carpeta|ruta|directorio|working\s*dir)\b', t, re.IGNORECASE):
-        p = _extract_path(t)
-        if p:
-            return SetWorkingDirIntent(repo_path=p)
-
-    return None
+    return (
+        f"Repositorio listo en {repo_abs}.\n"
+        f"HEAD: {head or '(sin commits)'} | último commit: {log1 or '(no hay)'}\n"
+        f"Remotos:\n{rem}\nRamas:\n{br}\n"
+        f"Status (porcelain):\n{status or '(limpio)'}\n"
+        + (f"Heads remotos:\n{remote_heads}\n" if remote_url else "")
+        + remote_summary
+    )

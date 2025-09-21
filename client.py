@@ -1,101 +1,59 @@
-# Cliente: es el componente que mantiene la conexión con el servidor, y obtiene la información sobre como utilizarlo. 
-from openai import OpenAI
-from dotenv import load_dotenv
+from __future__ import annotations
 import os, time
-from log import JsonlLogger
-import anyio
-from mcp.client.stdio import stdio_client, StdioServerParameters
-from mcp import ClientSession
+from dataclasses import dataclass
+from typing import Optional, Tuple
+from dotenv import load_dotenv
+from openai import OpenAI
 
-#load env variables
 load_dotenv()
 
-class OpeniaGPT4ominiClient:
-    def __init__(self, model: str = "gpt-4o-mini", logger: JsonlLogger = None):
-        self.api_key = os.getenv('OPENAI_API_KEY')
-        if not self.api_key:
+@dataclass
+class LlmUsage:
+    input_tokens: int | None = None
+    output_tokens: int | None = None
+
+class OpenAIResponsesClient:
+    def __init__(self, model: str = "gpt-4o-mini"):
+        api_key = os.getenv("OPENAI_API_KEY")
+        if not api_key:
             raise RuntimeError("Falta OPENAI_API_KEY en el entorno")
-        self.client = OpenAI(
-        api_key=self.api_key
-        )
-        
+        self.client = OpenAI(api_key=api_key)
         self.model = model
-        self.prev_id = None
-        self.logger = logger or JsonlLogger()
 
-    def first_turn(self, session_id: str, user_msg: str, max_output_tokens: int = 500 ) ->str:
-        t0 = time.perf_counter()
-        self.logger.event("llm","request", session_id=session_id, turn=1,
-                          request={"model": self.model, "op": "first_turn", "max_tokens": max_output_tokens,
-                                   "text": user_msg})
+    def create(self, input_parts, *, previous_response_id: Optional[str] = None, max_output_tokens: int = 700):
+        kwargs = dict(model=self.model, input=input_parts, max_output_tokens=max_output_tokens, store=True)
+        if previous_response_id:
+            kwargs["previous_response_id"] = previous_response_id
+        return self.client.responses.create(**kwargs)
 
-        response = self.client.responses.create(
-            model=self.model,
-            input=user_msg,
-            max_output_tokens=max_output_tokens,
-            store=True,
-            )
-        
-        dt_ms = int((time.perf_counter()-t0)*1000)
-        usage = getattr(response, "usage", None)
-        self.logger.event("llm","response", session_id=session_id, turn=1,
-                          response={"id": response.id, "duration_ms": dt_ms,
-                                    "text": response.output_text, "usage": usage})
+    def retrieve(self, rid: str):
+        return self.client.responses.retrieve(rid)
 
-        return response.output_text, response.id
+    def wait_until_ready(self, resp, *, poll_interval=0.25, timeout=60.0):
+        rid = resp.id
+        t0 = time.time()
+        status = getattr(resp, "status", None)
+        while status in ("in_progress", "queued") or status is None:
+            if time.time() - t0 > timeout:
+                break
+            time.sleep(poll_interval)
+            resp = self.client.responses.retrieve(rid)
+            status = getattr(resp, "status", None)
+        return resp
 
-    def next_turn(self, session_id: str, prev_response_id: str, user_msg: str, max_output_tokens : int = 100, turn: int = 2) ->str:
-        t0 = time.perf_counter()
-        self.logger.event("llm","request", session_id=session_id, turn=turn,
-                          request={"model": self.model, "op": "next_turn",
-                                   "previous_response_id": prev_response_id,
-                                   "max_tokens": max_output_tokens, "text": user_msg})
+    @staticmethod
+    def collect_text(resp) -> str:
+        txt = getattr(resp, "output_text", None)
+        if txt:
+            return txt
+        chunks = []
+        out = getattr(resp, "output", None)
+        if out:
+            for item in out:
+                for c in getattr(item, "content", []) or []:
+                    t = getattr(c, "text", None)
+                    if t:
+                        chunks.append(t)
+        return "\n".join(chunks) if chunks else ""
 
-        response = self.client.responses.create(
-            model=self.model,
-            input=user_msg,
-            previous_response_id = prev_response_id,
-            max_output_tokens=max_output_tokens,
-            store=True,
-            )
-        
-        dt_ms = int((time.perf_counter()-t0)*1000)
-        usage = getattr(response, "usage", None)
-        self.logger.event("llm","response", session_id=session_id, turn=turn,
-                          response={"id": response.id, "duration_ms": dt_ms,
-                                    "text": response.output_text, "usage": usage})
 
-        return response.output_text, response.id
-    
-    async def list_mcp_tools(self):
-        fs_params = StdioServerParameters(
-            command="npx",
-            args=[
-                "-y", "@modelcontextprotocol/server-filesystem",
-                r"C:\Users\angel\Projects",
-                r"C:\Users\angel\Desktop",
-                r"C:\Users\angel\OneDrive\Documentos\.universidad\.2025\s2\redes\proyecto1-redes",
-            ],
-        )
-        git_params = StdioServerParameters(
-            command="npx",
-            args=["-y", "@cyanheads/git-mcp-server"],
-        )
-
-        lines = []
-        async with stdio_client(fs_params) as (r, w):
-            async with ClientSession(r, w) as sess:
-                await sess.initialize()
-                res = await sess.list_tools()
-                lines += [f"- {t.name}: {t.description}" for t in res.tools]
-
-        async with stdio_client(git_params) as (r, w):
-            async with ClientSession(r, w) as sess:
-                await sess.initialize()
-                res = await sess.list_tools()
-                lines += [f"- {t.name}: {t.description}" for t in res.tools]
-
-        return "\n".join(lines)
-
-    def list_mcp_tools_sync(self):
-        return anyio.run(self.list_mcp_tools)
