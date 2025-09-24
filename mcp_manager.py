@@ -14,7 +14,7 @@ class MCPServerConfig:
     args: List[str] = field(default_factory=list)
     cwd: Optional[str] = None
 
-#  normalizadores 
+#  normalizadores
 def _normalize_git_args(tool: str, args: dict) -> tuple[str, dict]:
     a = dict(args or {})
     if tool in ("git_set_working_dir", "git:set_working_dir"):
@@ -66,8 +66,74 @@ def _normalize_gram_args(tool: str, args: dict):
         a.setdefault("lang","es")
     return tool, a
 
+def _normalize_yt_args(tool: str, args: dict) -> tuple[str, dict]:
+    a = dict(args or {})
 
-#  Multiplexer 
+    def _upper_region(v):
+        try:
+            return str(v).strip().upper()
+        except Exception:
+            return None
+
+    if tool in ("yt_init", "yt:yt_init"):
+        return tool, {}  # sin args
+
+    if tool in ("yt_list_regions", "yt:yt_list_regions"):
+        return tool, {}
+
+    if tool in ("yt_list_categories", "yt:yt_list_categories"):
+        a.setdefault("region", "US")
+        a["region"] = _upper_region(a["region"]) or "US"
+        return tool, a
+
+    if tool in ("yt_fetch_most_popular", "yt:yt_fetch_most_popular"):
+        a.setdefault("region", "US")
+        a["region"] = _upper_region(a["region"]) or "US"
+        a.setdefault("limit", 10)
+        a["limit"] = max(1, min(50, int(a["limit"])))
+        return tool, a
+
+    if tool in ("yt_register_keywords", "yt:yt_register_keywords"):
+        kws = a.get("keywords")
+        if isinstance(kws, str):
+            kws = [k.strip() for k in kws.split(",") if k.strip()]
+        if not isinstance(kws, list):
+            kws = []
+        a["keywords"] = [str(k).strip() for k in kws if str(k).strip()]
+        return tool, a
+
+    if tool in ("yt_search_recent", "yt:yt_search_recent"):
+        a.setdefault("days", 7)
+        a.setdefault("per_keyword", 10)
+        a.setdefault("order", "viewCount")
+        a["days"] = max(1, min(90, int(a["days"])))
+        a["per_keyword"] = max(1, min(50, int(a["per_keyword"])))
+        if a.get("order") not in ("viewCount", "date"):
+            a["order"] = "viewCount"
+        if "region" in a and a["region"]:
+            a["region"] = _upper_region(a["region"]) or "US"
+        return tool, a
+
+    if tool in ("yt_calc_trends", "yt:yt_calc_trends"):
+        a.setdefault("limit", 10)
+        a["limit"] = max(1, min(50, int(a["limit"])))
+        return tool, a
+
+    if tool in ("yt_trend_details", "yt:yt_trend_details"):
+        a["keyword"] = str(a.get("keyword") or "").strip()
+        a.setdefault("top", 10)
+        a["top"] = max(1, min(50, int(a["top"])))
+        return tool, a
+
+    if tool in ("yt_export_report", "yt:yt_export_report"):
+        if "path" in a and a["path"]:
+            a["path"] = os.path.normpath(str(a["path"]))
+        return tool, a
+
+    # Por defecto, pásalo tal cual
+    return tool, a
+
+#  Multiplexer
 class MCPMultiplexer:
     """
     Arranca cada servidor MCP una sola vez.
@@ -86,7 +152,7 @@ class MCPMultiplexer:
         self._thread = threading.Thread(target=self._run_loop, daemon=True)
         self._thread.start()
 
-    # loop thread 
+    # loop thread
     def _run_loop(self):
         asyncio.set_event_loop(self._loop)
         self._loop.run_forever()
@@ -96,7 +162,7 @@ class MCPMultiplexer:
         fut = asyncio.run_coroutine_threadsafe(coro, self._loop)
         return fut.result()
 
-    #  lifecycle 
+    #  lifecycle
     async def start(self):
         if self._started:
             return
@@ -110,6 +176,7 @@ class MCPMultiplexer:
             sess = await self._stack.enter_async_context(sess)
             await sess.initialize()
             self._sessions[cfg.name] = sess
+            print(f"[MCP] started '{cfg.name}' -> {cfg.command} {' '.join(cfg.args) if cfg.args else ''}")
         self._started = True
 
     async def stop(self):
@@ -130,7 +197,7 @@ class MCPMultiplexer:
         if not self._started:
             await self.start()
 
-    #  API async 
+    #  API async
     async def list_all_tools(self) -> Dict[str, Dict[str, str]]:
         await self._ensure_started()
         out: Dict[str, Dict[str, str]] = {}
@@ -153,6 +220,11 @@ class MCPMultiplexer:
             tool_to_call, call_args = _normalize_fs_args(tool_to_call, call_args)
         elif server_name == "gram":
             tool_to_call, call_args = _normalize_gram_args(tool_to_call, call_args)
+        elif server_name == "yt":
+            tool_to_call, call_args = _normalize_yt_args(tool_to_call, call_args)
+
+        print(f"[MCP] calling '{server_name}'")
+
 
         res = await sess.call_tool(tool_to_call, call_args)
         for item in getattr(res, "content", []) or []:
@@ -165,15 +237,15 @@ class MCPMultiplexer:
                     return {"text": item.text[:4000]}
         return {"error": "Respuesta vacía del servidor MCP"}
 
-    #  API sync (thread-safe) 
+    #  API sync (thread-safe)
     def start_sync(self):
         return self._submit(self.start())
-    
+
     def stop_sync(self):
         return self._submit(self.stop())
-    
+
     def list_all_tools_sync(self):
         return self._submit(self.list_all_tools())
-    
+
     def call_tool_sync(self, server_name: str, tool: str, args: Dict[str, Any]):
         return self._submit(self.call_tool(server_name, tool, args))

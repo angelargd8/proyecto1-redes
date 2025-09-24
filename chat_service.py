@@ -557,6 +557,7 @@ class ChatService:
             if out is None:
                 yt_int = _trigger_yt(_norm_text(user_msg))
                 if yt_int:
+                    print("[MCP] calling yt")
                     out = run_yt_intent(yt_int)
                     self.logger.event("yt", "intent", intent=yt_int, result_preview=str(out)[:400])
             
@@ -565,6 +566,7 @@ class ChatService:
             if out is None:
                 cite_int = _trigger_zotero_apa(_norm_text(user_msg))
                 if cite_int:
+                    print("[MCP] calling zotero")
                     out = run_cite_intent(cite_int)
                     self.logger.event("ztr", "intent", intent=cite_int, result_preview=str(out)[:400])
 
@@ -573,11 +575,13 @@ class ChatService:
             if out is None:
                 tc = _trigger_gram(user_msg)
                 if tc:
+                    print("[MCP] calling gram")
                     self.logger.event("gram", "intent", intent=tc)
                     out = self.agent.run(json.dumps(tc, ensure_ascii=False))
             
             # Agente normal
             if out is None:
+                # print("[MCP] calling agent")
                 out = self.agent.run(user_msg)
 
             return out
